@@ -8,6 +8,7 @@ class TweetsPersister():
       self.db = MySQLdb.connect(host = cred['db']['host'],
                                 db = cred['db']['db'],
                                 user = cred['db']['user'],
+                                passwd = cred['db']['password'],
                                 charset = cred['db']['charset'])
 
 
