@@ -31,19 +31,18 @@ persister = TweetsPersister() #connect to database
 while True:
     #try to get new user
 
-    new_user = 813286#persister.loadUnprocessedUser()
+    new_user = persister.loadUnprocessedUser()
     if new_user:
         print 'building network for user %s' % new_user
         followers = []
-        page = 1
         while True:
             try:
                 for follower in tweepy.Cursor(api.followers_ids, id=new_user).pages():
                     rl = api.rate_limit_status()
                     print(rl['resources']['followers']['/followers/ids'])
                     followers += follower
-                    print(len(followers))
-                    time.sleep(5)
+                    print len(followers), "followers"
+                    time.sleep(60)
                 #salva lista em arquivo
                 f = open("net/"+str(new_user), "w")
                 json.dump(followers, f)

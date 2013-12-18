@@ -15,7 +15,6 @@ cred = json.load(json_fp)
 
 persister = TweetsPersister()
 
-#TODO: git
 
 class StdOutListener(StreamListener):
     """ A listener handles tweets are the received from the stream.
