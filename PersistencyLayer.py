@@ -36,7 +36,7 @@ class TweetsPersister():
      c = self.db.cursor()
      data = (
         tweet['id'],
-        tweet['text'],
+        tweet['text'].encode('utf-8'),
         tweet['source'],
         (1 if tweet['truncated'] else 0),
         tweet['in_reply_to_status_id'],
@@ -110,9 +110,10 @@ class TweetsPersister():
          user['statuses_count'],
          user['lang'],
          (1 if user['contributors_enabled'] else 0),
+         0,
          0
       )
-      c.execute("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
+      c.execute("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed, friend_of_source) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
       self.db.commit()
       return
 
@@ -178,6 +179,12 @@ class TweetsPersister():
       return
 
 
+   def saveFollower(self, user_id):
+      c = self.db.cursor()
+      c.execute("UPDATE users SET friend_of_source=1 WHERE user_id=%s", user_id)
+      self.db.commit()
+      return       
+
    def loadUser(self, user_id):
       """
       User loader.
@@ -199,8 +206,9 @@ class TweetsPersister():
          'url': row[4],
          'followers_count': row[5],
          'friends_count': row[6],
-         'favorited_count': row[7],
-         'processed': row[-1]
+         'favorited_count': row[7]
+         #'processed': row[-2],
+         #'friend_of_source' : row[-1]
       }
 
       return user
@@ -285,5 +293,7 @@ class TweetsPersister():
 #      `user_statuses_count` int(10) unsigned DEFAULT NULL,
 #      `user_lang` varchar(10) CHARACTER SET utf8 DEFAULT NULL,
 #      `user_contributors_enabled` smallint(6) DEFAULT NULL,
-#      `user_processed` smallint(6) DEFAULT NULL
+#      `user_processed` smallint(6) DEFAULT 0
+#      `friend_of_source` smallint(6) DEFAULT 0
 #    );
+#    (FALTA TABLEW tweets_raw)

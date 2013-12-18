@@ -32,8 +32,15 @@ while True:
     #try to get new user
 
     new_user = persister.loadUnprocessedUser()
-    if new_user:
+    if new_user and new_user != 6017542:        
         print 'building network for user %s' % new_user
+                
+        #1 check if user is related to source
+        relation = api.show_friendship(source_id=6017542, target_id=310611950)
+        if relation[1].following == True:
+            persister.saveFollower(new_user)
+        
+        #2 get user's followers
         followers = []
         while True:
             try:

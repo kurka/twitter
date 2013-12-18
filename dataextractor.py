@@ -59,7 +59,7 @@ if __name__ == '__main__':
     auth.set_access_token(cred['twitter']['access_token'], cred['twitter']['access_token_secret'])
 
     stream = Stream(auth, l)
-    stream.filter(follow=['783214'])
+    stream.filter(follow=['6017542'])
     #TODO: explorar novas formas de pegar conteudo
     #stream.filter(follow=[followedUserIds[0:2])])    
     
