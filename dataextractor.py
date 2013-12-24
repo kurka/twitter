@@ -24,9 +24,8 @@ class StdOutListener(StreamListener):
     def on_data(self, data):
         parsed = json.loads(data)    
         
-                
-        user_id = int(parsed['user']['id_str'])      
-        print user_id
+        user_id = int(parsed['user']['id_str'])
+        print parsed['user']['name'], parsed['user']['screen_name']
         
         
         
