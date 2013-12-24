@@ -315,7 +315,8 @@ class TweetsPersister():
 #      `user_statuses_count` int(10) unsigned DEFAULT NULL,
 #      `user_lang` varchar(10) CHARACTER SET utf8 DEFAULT NULL,
 #      `user_contributors_enabled` smallint(6) DEFAULT NULL,
-#      `user_processed` smallint(6) DEFAULT 0
-#      `friend_of_source` smallint(6) DEFAULT 0
+#      `user_processed` smallint(6) DEFAULT 0,
+#      `friend_of_source` smallint(6) DEFAULT 0,
+#      `recurrent` smallint(6) DEFAULT 0
 #    );
 #    (FALTA TABLEW tweets_raw)

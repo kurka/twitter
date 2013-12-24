@@ -40,7 +40,7 @@ class StdOutListener(StreamListener):
             persister.insertUser(parsed['user'])
             userslist.append(user_id)
             
-        if user_id in userslist:
+        elif user_id in userslist:
             print ">>>>>USUARIO REPETIDO!"
             
             
@@ -55,8 +55,6 @@ if __name__ == '__main__':
 
 
     userslist = persister.loadUsers()
-    print 'tipo 1!'
-    print type(userslist[1])
 
     l = StdOutListener()
     auth = OAuthHandler(cred['twitter']['consumer_key'], cred['twitter']['consumer_secret'])
