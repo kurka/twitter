@@ -175,6 +175,21 @@ class TweetsPersister():
       users = [element for tupl in rows for element in tupl]
 
       return users
+
+   def loadUnprocessedRecurrentUser(self):
+      """
+      Load unprocessed user
+      @return Single user_id
+      """
+      sql = "SELECT user_id FROM users WHERE user_processed=0 AND recurrent=0 LIMIT 1"
+      data = ()
+      c = self.query(sql, data)
+      row = c.fetchone()
+      if row == None:
+          return None
+      else:
+          return row[0]
+
       
    def loadUnprocessedUser(self):
       """
@@ -197,6 +212,15 @@ class TweetsPersister():
       self.query(sql, data)
       self.db.commit()
       return
+
+   def saveRecurrentUser(self, user_id, value=1):
+      sql = "UPDATE users SET recurrent=%s WHERE user_id=%s"
+      data = (value, user_id)
+      self.query(sql, data)
+      self.db.commit()
+      return 
+     
+      persister.saveRecurrentUser(user_id)
 
    def saveFollower(self, user_id):   
       sql = "UPDATE users SET friend_of_source=1 WHERE user_id=%s"

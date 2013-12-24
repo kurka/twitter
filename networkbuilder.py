@@ -36,7 +36,11 @@ persister = TweetsPersister() #connect to database
 while True:
     #try to get new user
 
-    new_user = persister.loadUnprocessedUser()
+    new_user = persister.loadUnprocessedRecurrentUser() #try to get recurrent users first
+    if not new_user:
+        print ">>>>Terminei os usuarios recorrentes!!!"
+        new_user = persister.loadUnprocessedUser()
+        
     if new_user and new_user != 6017542:        
         print 'building network for user %s' % new_user
                 

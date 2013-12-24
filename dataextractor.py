@@ -41,6 +41,7 @@ class StdOutListener(StreamListener):
             
         elif user_id in userslist:
             print ">>>>>USUARIO REPETIDO!"
+            persister.saveRecurrentUser(user_id)
             
             
         print parsed['text'] #TODO tratar caracteres mto bizarros
