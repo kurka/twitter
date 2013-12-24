@@ -4,22 +4,36 @@ import json
 class TweetsPersister():
    def __init__(self):
       json_fp = open('credentials.json')
-      cred = json.load(json_fp)
-      self.db = MySQLdb.connect(host = cred['db']['host'],
-                                db = cred['db']['db'],
-                                user = cred['db']['user'],
-                                passwd = cred['db']['password'],
-                                charset = cred['db']['charset'])
+      self.cred = json.load(json_fp)
+      self.connect()
+    
+   def connect(self):
+      self.db = MySQLdb.connect(host = self.cred['db']['host'],
+                                db = self.cred['db']['db'],
+                                user = self.cred['db']['user'],
+                                passwd = self.cred['db']['password'],
+                                charset = self.cred['db']['charset'])
 
-
-
-
-
-
+   def query(self, sql, params):
+      try:
+        cursor = self.db.cursor()
+        if params:
+            cursor.execute(sql, params)
+        else:
+            cursor.execute(sql)
+      except (AttributeError, MySQLdb.OperationalError):
+        self.connect()
+        cursor = self.db.cursor()
+        if params:
+            cursor.execute(sql, params)
+        else:
+            cursor.execute(sql)
+      return cursor
+      
+      
 
    def insertRawTweet(self, string):
-      c = self.db.cursor()
-      c.execute("INSERT INTO tweets_raw VALUES (%s)", string)
+      self.query("INSERT INTO tweets_raw VALUES (%s)", string)
       self.db.commit()
       return
 
@@ -33,7 +47,12 @@ class TweetsPersister():
      tweet['user_id'] = tweet['user']['id']
 
      # create tweet
-     c = self.db.cursor()
+     try:
+        c = self.db.cursor()
+     except (AttributeError, MySQLdb.OperationalError):
+        self.connect()
+        c = self.db.cursor()
+      
      data = (
         tweet['id'],
         tweet['text'].encode('utf-8'),
@@ -90,7 +109,6 @@ class TweetsPersister():
      return
 
    def insertUser(self, user):
-      c = self.db.cursor()
       data = (
          user['id'],
          user['name'],
@@ -113,7 +131,7 @@ class TweetsPersister():
          0,
          0
       )
-      c.execute("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed, friend_of_source) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
+      self.query("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed, friend_of_source) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
       self.db.commit()
       return
 
@@ -124,8 +142,10 @@ class TweetsPersister():
       @param tweet_id
       @return Populated tweet dictionary, if tweet found. "None" otherwise.
       """
-      c = self.db.cursor()
-      c.execute("SELECT tweet_text, tweet_source, user_id, tweet_retweeted_status_id FROM tweet WHERE tweet_id = %s", tweet_id)
+      sql = "SELECT tweet_text, tweet_source, user_id, tweet_retweeted_status_id FROM tweet WHERE tweet_id = %s"
+      data = (tweet_id)
+      c = self.query(sql, data)
+      
       row = c.fetchone()
       if row is None:
          return None
@@ -147,10 +167,10 @@ class TweetsPersister():
       User loader
       @return user_id's list, if found. "None" otherwise.
       """
-      c = self.db.cursor()
-      c.execute("SELECT user_id FROM users")
+      sql = "SELECT user_id FROM users"
+      data = ()
+      c = self.query(sql, data)
       rows = c.fetchall()
-      
       #flattening result
       users = [element for tupl in rows for element in tupl]
 
@@ -160,33 +180,30 @@ class TweetsPersister():
       """
       Load unprocessed user
       @return Single user_id
-      """      
-      with self.db:
-          c = self.db.cursor()
-          c.execute("SELECT user_id FROM users WHERE user_processed=0 LIMIT 1")
-          row = c.fetchone()
-      
-          if row == None:
-              return None
-          else:
-              return row[0]
+      """
+      sql = "SELECT user_id FROM users WHERE user_processed=0 LIMIT 1"
+      data = ()
+      c = self.query(sql, data)
+      row = c.fetchone()
+      if row == None:
+          return None
+      else:
+          return row[0]
           
           
    def saveProcessedUser(self, user_id, value=1):
-      with self.db:
-          c = self.db.cursor()
-          data = (value, user_id)
-          c.execute("UPDATE users SET user_processed=%s WHERE user_id=%s", data)
-          return
+      sql = "UPDATE users SET user_processed=%s WHERE user_id=%s"
+      data = (value, user_id)
+      self.query(sql, data)
+      self.db.commit()
+      return
 
-
-
-   def saveFollower(self, user_id):
-      with self.db:
-          c = self.db.cursor()
-          data = (user_id)
-          c.execute("UPDATE users SET friend_of_source=1 WHERE user_id=%s", data)
-          return       
+   def saveFollower(self, user_id):   
+      sql = "UPDATE users SET friend_of_source=1 WHERE user_id=%s"
+      data = (user_id)
+      self.query(sql, data)
+      self.db.commit()
+      return       
 
    def loadUser(self, user_id):
       """
@@ -194,9 +211,11 @@ class TweetsPersister():
       @param user_id
       @return Populated user dictionary, if found. "None" otherwise.
       """
-      c = self.db.cursor()
-      c.execute("SELECT user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_favourites_count FROM user WHERE user_id = %s", user_id)
+      sql = "SELECT user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_favourites_count FROM user WHERE user_id = %s"
+      params = user_id
+      c = self.query(sql, params)
       row = c.fetchone()
+      
       if row is None:
          return None
 
@@ -219,12 +238,12 @@ class TweetsPersister():
 
 
    def updateTweetCreatedAt(self, tweet):
-      c = self.db.cursor()
+      sql = "UPDATE tweet SET tweet_created_at = %s WHERE tweet_id = %s"
       data = (
          tweet['created_at'],
          tweet['id']
       )
-      c.execute("UPDATE tweet SET tweet_created_at = %s WHERE tweet_id = %s", data)
+      self.query(sql, data)
       self.db.commit()
       return
 
