@@ -181,7 +181,8 @@ class TweetsPersister():
 
    def saveFollower(self, user_id):
       c = self.db.cursor()
-      c.execute("UPDATE users SET friend_of_source=1 WHERE user_id=%s", user_id)
+      data = (user_id)
+      c.execute("UPDATE users SET friend_of_source=1 WHERE user_id=%s", data)
       self.db.commit()
       return       
 

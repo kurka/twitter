@@ -26,20 +26,19 @@ class StdOutListener(StreamListener):
         
         user_id = int(parsed['user']['id_str'])
         print user_id
-
         
         #guardar tweet no banco de dados geral
         #TODO: fazer isso como processo independente!
         persister.insertRawTweet(data)
         persister.insertParsedTweet(parsed)
-        
+       
         #ver se o id eh unico e incrementar ids        
         if user_id not in userslist:
             persister.insertUser(parsed['user'])
             userslist.append(parsed['user']['id_str'])
             
         if user_id in userslist:
-            print "USUARIO REPETIDO!"
+            print ">>>>>USUARIO REPETIDO!"
             
             
         print parsed['text'] #TODO tratar caracteres mto bizarros

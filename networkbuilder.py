@@ -25,6 +25,11 @@ api = tweepy.API(auth)
 
 rl = api.rate_limit_status()
 print(rl['resources']['followers']['/followers/ids'])
+if rl['resources']['followers']['/followers/ids']['reset'] == 0:
+    time_to_reset = rl['resources']['followers']['/followers/ids']['reset']-int(time.time())+11
+    print "dormindo por %s segundos esperando o reset" % time_to_reset
+    if time_to_reset > 0:
+        time.sleep(time_to_reset)
 
 persister = TweetsPersister() #connect to database
 
@@ -42,35 +47,34 @@ while True:
         
         #2 get user's followers
         followers = []
-        while True:
-            try:
-                for follower in tweepy.Cursor(api.followers_ids, id=new_user).pages():
-                    rl = api.rate_limit_status()
-                    print(rl['resources']['followers']['/followers/ids'])
-                    followers += follower
-                    print len(followers), "followers"
-                    time.sleep(60)
-                #salva lista em arquivo
-                f = open("net/"+str(new_user), "w")
-                json.dump(followers, f)
-                f.close()
-                #registra no banco de dados que usuario ja foi processado
-                persister.saveProcessedUser(new_user)
-                break
-            except (tweepy.TweepError), e:
-                print(e)
-                if rl['resources']['followers']['/followers/ids']['remaining'] > 0:
-                    #algum erro que nao o rate limit fez ele entrar aqui
-                    persister.saveProcessedUser(new_user, 2)
-                    time.sleep(60)
-                    break
-                else:#falta de recursos, tenta de novo
+        try:
+            for follower in tweepy.Cursor(api.followers_ids, id=new_user).pages():
+                rl = api.rate_limit_status()
+                print(rl['resources']['followers']['/followers/ids'])
+                followers += follower
+                print len(followers), "followers"
+                if rl['resources']['followers']['/followers/ids']['reset'] == 0:
                     time_to_reset = rl['resources']['followers']['/followers/ids']['reset']-int(time.time())+11
                     print "dormindo por %s segundos esperando o reset" % time_to_reset
                     if time_to_reset > 0:
                         time.sleep(time_to_reset)
-                    continue
-    
+                else:
+                    time.sleep(60)
+            #salva lista em arquivo
+            f = open("net/"+str(new_user), "w")
+            json.dump(followers, f)
+            f.close()
+            #registra no banco de dados que usuario ja foi processado
+            persister.saveProcessedUser(new_user)
+        except (tweepy.TweepError), e:
+            print(e)
+            if rl['resources']['followers']['/followers/ids']['remaining'] > 0:
+                #algum erro que nao o rate limit fez ele entrar aqui
+                persister.saveProcessedUser(new_user, 2)
+                time.sleep(60)
+                continue
+    elif new_user == 6017542:
+        persister.saveProcessedUser(new_user, 3)
     else:
         print ">>>Network Builder desocupado!"
         time.sleep(10)
