@@ -161,30 +161,32 @@ class TweetsPersister():
       Load unprocessed user
       @return Single user_id
       """      
-      c = self.db.cursor()
-      c.execute("SELECT user_id FROM users WHERE user_processed=0 LIMIT 1")
-      row = c.fetchone()
+      with self.db:
+          c = self.db.cursor()
+          c.execute("SELECT user_id FROM users WHERE user_processed=0 LIMIT 1")
+          row = c.fetchone()
       
-      if row == None:
-          return None
-      else:
-          return row[0]
+          if row == None:
+              return None
+          else:
+              return row[0]
           
           
    def saveProcessedUser(self, user_id, value=1):
-      c = self.db.cursor()
-      data = (value, user_id)
-      c.execute("UPDATE users SET user_processed=%s WHERE user_id=%s", data)
-      self.db.commit()
-      return
+      with self.db:
+          c = self.db.cursor()
+          data = (value, user_id)
+          c.execute("UPDATE users SET user_processed=%s WHERE user_id=%s", data)
+          return
+
 
 
    def saveFollower(self, user_id):
-      c = self.db.cursor()
-      data = (user_id)
-      c.execute("UPDATE users SET friend_of_source=1 WHERE user_id=%s", data)
-      self.db.commit()
-      return       
+      with self.db:
+          c = self.db.cursor()
+          data = (user_id)
+          c.execute("UPDATE users SET friend_of_source=1 WHERE user_id=%s", data)
+          return       
 
    def loadUser(self, user_id):
       """
