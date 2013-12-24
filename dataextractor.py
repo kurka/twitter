@@ -27,6 +27,8 @@ class StdOutListener(StreamListener):
         user_id = int(parsed['user']['id_str'])
         print parsed['user']['name'], parsed['user']['screen_name']
         
+        
+        
         #guardar tweet no banco de dados geral
         #TODO: fazer isso como processo independente!
         persister.insertRawTweet(data)
@@ -35,7 +37,7 @@ class StdOutListener(StreamListener):
         #ver se o id eh unico e incrementar ids        
         if user_id not in userslist:
             persister.insertUser(parsed['user'])
-            userslist.append(parsed['user']['id_str'])
+            userslist.append(user_id)
             
         if user_id in userslist:
             print ">>>>>USUARIO REPETIDO!"
@@ -52,6 +54,8 @@ if __name__ == '__main__':
 
 
     userslist = persister.loadUsers()
+    print 'tipo 1!'
+    print type(userslist[1])
 
     l = StdOutListener()
     auth = OAuthHandler(cred['twitter']['consumer_key'], cred['twitter']['consumer_secret'])
