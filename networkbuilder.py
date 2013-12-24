@@ -53,7 +53,7 @@ while True:
                 print(rl['resources']['followers']['/followers/ids'])
                 followers += follower
                 print len(followers), "followers"
-                if rl['resources']['followers']['/followers/ids']['reset'] == 0:
+                if rl['resources']['followers']['/followers/ids']['remaining'] == 0:
                     time_to_reset = rl['resources']['followers']['/followers/ids']['reset']-int(time.time())+11
                     print "dormindo por %s segundos esperando o reset" % time_to_reset
                     if time_to_reset > 0:
@@ -68,11 +68,19 @@ while True:
             persister.saveProcessedUser(new_user)
         except (tweepy.TweepError), e:
             print(e)
+            rl = api.rate_limit_status()
             if rl['resources']['followers']['/followers/ids']['remaining'] > 0:
                 #algum erro que nao o rate limit fez ele entrar aqui
                 persister.saveProcessedUser(new_user, 2)
                 time.sleep(60)
                 continue
+            elif rl['resources']['followers']['/followers/ids']['remaining'] == 0:
+                time_to_reset = rl['resources']['followers']['/followers/ids']['reset']-int(time.time())+11
+                print "dormindo por %s segundos esperando o reset" % time_to_reset
+                if time_to_reset > 0:
+                    time.sleep(time_to_reset)
+
+
     elif new_user == 6017542:
         persister.saveProcessedUser(new_user, 3)
     else:

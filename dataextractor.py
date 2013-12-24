@@ -25,7 +25,7 @@ class StdOutListener(StreamListener):
         parsed = json.loads(data)    
         
         user_id = int(parsed['user']['id_str'])
-        print user_id
+        print parsed['user']['name'], parsed['user']['screen_name']
         
         #guardar tweet no banco de dados geral
         #TODO: fazer isso como processo independente!
