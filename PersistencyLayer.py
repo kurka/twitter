@@ -181,7 +181,7 @@ class TweetsPersister():
       Load unprocessed user
       @return Single user_id
       """
-      sql = "SELECT user_id FROM users WHERE user_processed=0 AND recurrent=0 LIMIT 1"
+      sql = "SELECT user_id FROM users WHERE user_processed=0 AND recurrent=1 LIMIT 1"
       data = ()
       c = self.query(sql, data)
       row = c.fetchone()
@@ -205,6 +205,20 @@ class TweetsPersister():
       else:
           return row[0]
           
+   def loadUnprocessedUser2(self):
+      """
+      Load unprocessed user
+      @return Single user_id
+      """
+      sql = "SELECT user_id FROM users WHERE user_processed=1 LIMIT 1"
+      data = ()
+      c = self.query(sql, data)
+      row = c.fetchone()
+      if row == None:
+          return None
+      else:
+          return row[0]
+      #TODO: juntar essas 3 funcoes em uma so 
           
    def saveProcessedUser(self, user_id, value=1):
       sql = "UPDATE users SET user_processed=%s WHERE user_id=%s"
