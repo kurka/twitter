@@ -29,7 +29,6 @@ if rl['resources']['friendships']['/friendships/show']['reset'] == 0:
         time.sleep(10)
 
 persister = TweetsPersister() #connect to database
-
 while True:
     #try to get new user
     new_user = persister.loadUnprocessedUser2() 
@@ -44,27 +43,13 @@ while True:
             if relation[1].following == True:
                 persister.saveFollower(new_user)
                 
-            #checa se ainda da pra fazer requisicoes
-            rl = api.rate_limit_status()
-            if rl['resources']['friendships']['/friendships/show']['remaining'] == 0:
-                time_to_reset = rl['resources']['friendships']['/friendships/show']['reset']-int(time.time())+11
-                print "dormindo por %s segundos esperando o reset" % time_to_reset
-                if time_to_reset > 0:
-                    time.sleep(time_to_reset)
-                else:
-                    time.sleep(10)
-            else:
-                time.sleep(5)
-            
-            rl = api.rate_limit_status()
-            while rl['resources']['friendships']['/friendships/show']['remaining'] == 0:
-                time.sleep(10)
-                rl = api.rate_limit_status()
+            time.sleep(5)
 
             #registra no banco de dados que usuario ja foi processado
             persister.saveProcessedUser(new_user, 4)
         except (tweepy.TweepError), e:
             print(e)
+            rl = api.rate_limit_status()
             if rl['resources']['friendships']['/friendships/show']['remaining'] > 0:
                 #algum erro que nao o rate limit fez ele entrar aqui
                 persister.saveProcessedUser(new_user, 5)
@@ -75,6 +60,11 @@ while True:
                 print "dormindo por %s segundos esperando o reset" % time_to_reset
                 if time_to_reset > 0:
                     time.sleep(time_to_reset)
+            
+                rl = api.rate_limit_status()
+                while rl['resources']['friendships']['/friendships/show']['remaining'] == 0:
+                    time.sleep(10)
+                    rl = api.rate_limit_status()
 
 
     else:
