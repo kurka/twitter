@@ -143,7 +143,7 @@ class TweetsPersister():
       @return Populated tweet dictionary, if tweet found. "None" otherwise.
       """
       sql = "SELECT tweet_text, tweet_source, user_id, tweet_retweeted_status_id FROM tweet WHERE tweet_id = %s"
-      data = (tweet_id)
+      data = (tweet_id,)
       c = self.query(sql, data)
       
       row = c.fetchone()
@@ -159,7 +159,58 @@ class TweetsPersister():
       }
 
       return tweet
+      
+   def loadTweetsOfUser(self, user):
+      """
+      Tweet loader.
+      @param tweet_id
+      @return Populated tweet dictionary, if tweet found. "None" otherwise.
+      """
+      sql = "SELECT tweet_id, tweet_text, tweet_created_at FROM tweets WHERE user_id = %s LIMIT 10"
+      data = (user,)
+      c = self.query(sql, data)
+      
+      rows = c.fetchall()
+      if rows is None:
+         return None
 
+      tweets = []
+      for row in rows:
+          tweet = {
+              'tweet_id': row[0],
+              'text': row[1],
+              'time': row[2],
+              'user_id': user
+             }
+          tweets.append(tweet)
+
+      return tweets
+
+   def loadRetweets(self, tweet_id):
+      """
+      Tweet loader.
+      @param tweet_id
+      @return Populated tweet dictionary, if tweet found. "None" otherwise.
+      """
+      sql = "SELECT tweet_id, tweet_text, tweet_created_at, user_id FROM tweets WHERE tweet_retweeted_status_id = %s"
+      data = (tweet_id,)
+      c = self.query(sql, data)
+      
+      rows = c.fetchall()
+      if rows is None:
+         return None
+
+      retweets = []
+      for row in rows:
+          tweet = {
+              'tweet_id': row[0],
+              'text': row[1],
+              'time': row[2],
+              'user_id': row[3]
+             }
+          retweets.append(tweet)
+
+      return retweets
 
 
    def loadUsers(self):
@@ -175,6 +226,7 @@ class TweetsPersister():
       users = [element for tupl in rows for element in tupl]
 
       return users
+       
 
    def loadUnprocessedRecurrentUser(self):
       """
@@ -233,12 +285,10 @@ class TweetsPersister():
       self.query(sql, data)
       self.db.commit()
       return 
-     
-      persister.saveRecurrentUser(user_id)
 
    def saveFollower(self, user_id):   
       sql = "UPDATE users SET friend_of_source=1 WHERE user_id=%s"
-      data = (user_id)
+      data = (user_id,)
       self.query(sql, data)
       self.db.commit()
       return       
