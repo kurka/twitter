@@ -3,6 +3,7 @@
 #import networkx as nx
 #import os
 import json
+import pickle
 from PersistencyLayer import TweetsPersister
 
 json_fp = open('credentials.json')
@@ -22,8 +23,15 @@ for root_tweet in root_tweets:
         tweets_collection.append(retweets)
     
 users = list(set([item['user_id'] for sublist in tweets_collection for item in sublist]))
-    
-    
+
+f1 = open('tweetcol.data', 'w')
+f2 = open('users.data', 'w')
+
+pickle.dump(tweets_collection, f1)
+pickle.dump(users, f2)
+
+f1.close()
+f2.close()
     
 
 
