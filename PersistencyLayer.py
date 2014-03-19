@@ -166,7 +166,7 @@ class TweetsPersister():
       @param tweet_id
       @return Populated tweet dictionary, if tweet found. "None" otherwise.
       """
-      sql = "SELECT tweet_id, tweet_text, tweet_created_at FROM tweets WHERE user_id = %s LIMIT 10"
+      sql = "SELECT tweet_id, tweet_text, tweet_created_at FROM tweets WHERE user_id = %s"
       data = (user,)
       c = self.query(sql, data)
       
