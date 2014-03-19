@@ -10,6 +10,8 @@ from tweepy.streaming import StreamListener
 from tweepy import OAuthHandler
 from tweepy import Stream
 
+SOURCE_ID = '14594813'
+
 json_fp = open('credentials.json')
 cred = json.load(json_fp)
 
@@ -61,7 +63,7 @@ if __name__ == '__main__':
     auth.set_access_token(cred['twitter']['access_token'], cred['twitter']['access_token_secret'])
 
     stream = Stream(auth, l)
-    stream.filter(follow=['6017542'])
+    stream.filter(follow=[SOURCE_ID])
     #TODO: explorar novas formas de pegar conteudo
     #stream.filter(follow=[followedUserIds[0:2])])    
     
