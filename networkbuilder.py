@@ -10,6 +10,7 @@ import time
 import json
 from PersistencyLayer import TweetsPersister
 
+SOURCE_ID = 14594813
 json_fp = open('credentials.json')
 cred = json.load(json_fp)
 
@@ -38,11 +39,11 @@ while True:
         if not new_user:
             new_user = persister.loadUnprocessedUser()
             
-        if new_user and new_user != 6017542:        
+        if new_user and new_user != SOURCE_ID:
             print 'building network for user %s' % new_user
                     
             #1 check if user is related to source
-            relation = api.show_friendship(source_id=6017542, target_id=new_user)
+            relation = api.show_friendship(source_id=SOURCE_ID, target_id=new_user)
             if relation[1].following == True:
                 persister.saveFollower(new_user)
             
@@ -89,7 +90,7 @@ while True:
                     if time_to_reset > 0:
                         time.sleep(time_to_reset)
     
-        elif new_user == 6017542:
+        elif new_user == SOURCE_ID:
             persister.saveProcessedUser(new_user, 3)
         else:
             print ">>>Network Builder desocupado!"
