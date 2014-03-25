@@ -237,6 +237,7 @@ class TweetsPersister():
       data = ()
       c = self.query(sql, data)
       row = c.fetchone()
+      self.db.commit()
       if row == None:
           return None
       else:
@@ -252,6 +253,7 @@ class TweetsPersister():
       data = ()
       c = self.query(sql, data)
       row = c.fetchone()
+      self.db.commit()
       if row == None:
           return None
       else:
