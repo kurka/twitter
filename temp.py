@@ -20,19 +20,38 @@ json_fp = open('credentials.json')
 cred = json.load(json_fp)
 
 persister = TweetsPersister()
-root_tweets = persister.loadTweetsOfUser(ROOTUSER) #get all root tweets
+#root_tweets = persister.loadTweetsOfUser(ROOTUSER) #get all root tweets
 
-root_tweets = root_tweets[:587] #work just with 600 messages
-#root_tweets = root_tweets[300:400] #work just with 600 messages
+
+f = open("folha2600classes.data", "r")
+root_tweets_extended = pickle.load(f)
+f.close()
+
+def topiccleaner(tweet):
+    if tweet['class'] in ['cotidiano', 'esporte', 'mundo', 'poder', 'ilustrada', 'mercado']:
+        return True
+    else:
+        return False
+
+#cleaning root tweets
+root_tweets = filter(topiccleaner, root_tweets_extended)
+
+
+
 
 tweets_collection = []
+classes = []
 for root_tweet in root_tweets:
-    retweets = persister.loadRetweets(root_tweet['tweet_id'])
-    if retweets:
+    retweets = persister.loadRetweets(root_tweet['tweet']['tweet_id'])
+    if retweets and len(retweets)>=10: #limiting just stories with more than 10 retweets
         #retweets.insert(0, root_tweet) #insert root tweet at the beggining of the list
         tweets_collection.append(retweets)
+        classes.append(root_tweet['class'])
 
-users = list(set([item['user_id'] for sublist in tweets_collection for item in sublist]))
+
+classes = np.array(classes)
+tweets_collection = np.array(tweets_collection)
+users = np.array(list(set([item['user_id'] for sublist in tweets_collection for item in sublist])))
 #users.remove(ROOTUSER)
 
 
@@ -61,13 +80,31 @@ tweets_matrix = zeros((len(users), len(tweets_collection))) #empty matrix
 col_num = 0
 for col in tweets_collection:
     #get the positions of the users, in users list
-    col_indexes = array([users.index(tweet['user_id']) for tweet in col]) 
+    col_indexes = array([np.where(users == tweet['user_id']) for tweet in col]) 
     tweets_matrix[col_indexes, col_num] = 1
     col_num += 1
     
+#remove bots from matrix
+rsum = np.sum(tweets_matrix, axis=1)
+bots = np.argsort(rsum)[-1]
+
+tweets_matrix = np.delete(tweets_matrix, bots, axis=0)
+users = np.delete(users, bots)
+
+
+
+#clear empty lines or colums
+rsum = np.sum(tweets_matrix, axis=1)
+zr = np.where(rsum==0)
+tweets_matrix = np.delete(tweets_matrix, zr, axis=0)
+users = np.delete(users, zr)
     
-#remove root user from matrix
-    
+lsum = np.sum(tweets_matrix, axis=0)
+zl = np.where(lsum<10)
+tweets_matrix = np.delete(tweets_matrix, zl, axis=1)
+tweets_collection = np.delete(tweets_collection, zl)
+classes = np.delete(classes, zl)
+
 
 #################
 #visualiza matriz como imagem
@@ -101,17 +138,24 @@ X = tweets_matrix.transpose()
 
 import random    
 initcentres = X[random.sample(xrange(X.shape[0]), ncluster)]
-centres, xtoc, dist = kmeans(X, ncluster, initcentres=None, metric="jaccard", maxiter=100, delta=.00001, verbose=True)
+centres, xtoc, dist = kmeans(X, ncluster, initcentres=None, metric="cosine", maxiter=100, delta=.00001, verbose=True)
 
    
 #####
 #imprime clusters
+cols = []
 for j in range(ncluster):
     for i in where(xtoc == j)[0]:
-        print tweets_collection[i][0]['text'] 
+        print tweets_collection[i][0]['text'][14:] 
+        cols.append(i)
     print "\n\n"
 
 
+plt.matshow(X, cmap=plt.cm.Blues)
+plt.title("original dataset")
+
+plt.matshow(X[cols], cmap=plt.cm.Blues)
+plt.title("clustered dataset")
 #############
 
 
@@ -191,10 +235,17 @@ for n,d in iterable:
 #f = open("cleanedges.data", "r")
 #clean_edges = pickle.load(f)
 
+#f = open('gclean.data', 'w')
+#pickle.dump(GClean, f)
+#
+#f = open("gclean.data", "r")
+#GClean = pickle.load(f)
+#f.close()
+
 #GClean.add_edges_from(clean_edges)
 #GDirty.add_edges_from(dirty_edges)
 
-nx.write_gexf(GClean, "folha300.gexf")
+nx.write_gexf(GClean, "folha586.gexf")
 nx.write_gexf(GDirty, "folha300dirty.gexf")
 
 ##############
@@ -205,9 +256,6 @@ import community
 import networkx as nx
 import matplotlib.pyplot as plt
 
-#better with karate_graph() as defined in networkx example.
-#erdos renyi don't have true community structure
-G = nx.erdos_renyi_graph(30, 0.05)
 G = GClean.to_undirected()
 #first compute the best partition
 partition = community.best_partition(G)
@@ -251,6 +299,15 @@ for com in set(partition.values()):
     community_matrix[row_num, :] = tweets_matrix[row_indexes, :].sum(0)
     row_num += 1
     
+    
+comsizes = np.bincount(partition.values())
+for com in set(partition.values()):
+    print "particao", com, comsizes[com]
+    toptweets = np.argsort(community_matrix[com,:])[::-1][:10]
+    for t in toptweets:
+        print community_matrix[com, t]/comsizes[com], tweets_collection[t][0]['text'][14:] 
+    print "\n"
+        
 
 #kmeans 2
 
@@ -283,16 +340,155 @@ def propagate(user, graph, tweet, visited):
     #visited.append(user)
     for u, follower in graph.out_edges([user]):
         #if follower not in visited:
-            #propagate(follower, graph, tweet, visited)
-        tweet[users.index(follower)] += 0.2 #valor arbitrario!
+            #propagate(follower, graph, tweet, visited)    
+        #tweet[users.index(follower)] += 0.4 * (1-tweet[users.index(follower)]) #valor arbitrario!
+        tweet[np.where(users==follower)] = 1
+#        if tweet[users.index(follower)] < 1:
+#            tweet[users.index(follower)] += 1.0/len(graph.in_edges([follower]))
         #print len(visited)
-       
+ 
+#tweets_matrix_sparse = tweets_matrix.copy()
+tweets_matrix = tweets_matrix_sparse.copy()      
 for tweet in tweets_matrix.T:
     for user in np.where(tweet==1)[0]:
         #get user followers and increase their values
         propagate(users[user], GClean, tweet, [])
         
         
+#tweets_matrix = tweets_matrix_sparse #restore (if needed)
+        
+######
+#biclusterizacao
 
+# Author: Kemal Eren <kemal@kemaleren.com>
+# License: BSD 3 clause
+
+import numpy as np
+from matplotlib import pyplot as plt
+
+from sklearn.cluster.bicluster import SpectralCoclustering
+
+
+#data = tweets_matrix
+data = community_matrix
+
+plt.matshow(tweets_matrix_sparse.T, cmap=plt.cm.Blues)
+plt.title("Sparse dataset")
+
+plt.matshow(tweets_matrix.T, cmap=plt.cm.Blues)
+plt.title("Original dataset")
+
+plt.matshow(data.T, cmap=plt.cm.Blues)
+plt.title("Communities dataset")
+
+
+model = SpectralCoclustering(n_clusters=5)
+model.fit(data)
+
+
+fit_data = data[np.argsort(model.row_labels_)]
+fit_data = fit_data[:, np.argsort(model.column_labels_)]
+
+plt.matshow(fit_data.T, cmap=plt.cm.Blues)
+plt.title("After biclustering; rearranged to show biclusters")
+
+plt.show() 
+
+
+
+##bimax  
+
+import bibench.all as bb
+bb.heatmap(data)
+
+import bibench.all as bb         # import most commonly used functions
+data = bb.get_gds_data('GDS181') # download gene expression dataset GDS181
+data = bb.pca_impute(data)       # impute missing values
+biclusters = bb.plaid(data)      # cluster with Plaid algorithm
+
+row_labels = []
+column_labels = []
+for bic in biclusters:
+    row_labels += bic.rows
+    column_labels += bic.cols
+    
+
+fit_data = data[row_labels]
+fit_data = fit_data[:, column_labels]
+
+plt.matshow(fit_data.T, cmap=plt.cm.Blues)
+plt.title("After biclustering; rearranged to show biclusters")
+
+
+#imprime clusters
+for bic in biclusters:
+    for c in bic.cols:
+        print tweets_collection[c][0]['text'] 
+    print "\n\n"
+    
+    
+    
+#############################
+#knn
+    
+#seleciona grupo para classificar
+import random
+from scipy.spatial.distance import cdist
+from operator import itemgetter
+
+k = 200
+samplei = random.sample(xrange(tweets_matrix.shape[1]), k)
+samples = tweets_matrix[:,samplei]
+
+D = cdist(tweets_matrix.T, samples.T, metric="jaccard")
+
+
+#imprime tweet sendo comparado
+#for i in range(k):
+#    print "original:"
+#    print classes[samplei[i]], tweets_collection[samplei[i]][0]['text'][14:100]
+#    
+#    sorts = np.argsort(D[:,i])
+#    print "10 vizinhos mais próximos:"
+#    for j in range(1,10):
+#        print classes[sorts[j]], "\t\t", D[sorts[j],i], "\t", tweets_collection[sorts[j]][0]['text'][14:] 
+# 
+#    print "\n"
+    
+
+
+tamanhos = [1, 3, 5, 7, 11, 25]
+resultados_ok = dict([(i, 0) for i in tamanhos])
+resultados_nulo = dict([(i, 0) for i in tamanhos])
+
+for i in range(k):
+    gabarito = classes[samplei[i]]
+    sorts = np.argsort(D[:,i])
+    shuffled = range(len(sorts))
+    random.shuffle(shuffled)
+    shuffled = np.array(shuffled)
+    for j in range(len(tamanhos)):
+        vizinhos = list(classes[sorts[1:(tamanhos[j]+1)]])
+        contagem = [(vizinhos.count(v), v) for v in set(vizinhos)]
+        if max(contagem, key=itemgetter(0))[1] == gabarito:
+                resultados_ok[tamanhos[j]] += 1
+        vizinhos = list(classes[shuffled[1:(tamanhos[j]+1)]])
+        contagem = [(vizinhos.count(v), v) for v in set(vizinhos)]
+        if max(contagem, key=itemgetter(0))[1] == gabarito:
+                resultados_nulo[tamanhos[j]] += 1
         
-        
+k = float(k)
+for i in tamanhos:
+    print "k",i,": ",resultados_ok[i]/k,resultados_nulo[i]/k
+k = int(k)    
+ 
+    
+    
+    
+    
+    
+    
+    
+    
+##########################
+#biclustering community matrix
