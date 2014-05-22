@@ -7,7 +7,7 @@ Created on Wed Mar 12 11:34:12 2014
 
 import networkx as nx
 import json
-from numpy import *
+import numpy as np
 import pickle
 
 
@@ -20,15 +20,18 @@ json_fp = open('credentials.json')
 cred = json.load(json_fp)
 
 persister = TweetsPersister()
-#root_tweets = persister.loadTweetsOfUser(ROOTUSER) #get all root tweets
+root_tweets = persister.loadTweetsOfUser(ROOTUSER) #get all root tweets
 
 
 f = open("folha2600classes.data", "r")
 root_tweets_extended = pickle.load(f)
 f.close()
 
+
+class_dict = {'cotidiano':1, 'esporte':2, 'mundo':3, 'poder':4, 'ilustrada':5, 'mercado':6}
+
 def topiccleaner(tweet):
-    if tweet['class'] in ['cotidiano', 'esporte', 'mundo', 'poder', 'ilustrada', 'mercado']:
+    if tweet['class'] in class_dict.keys():
         return True
     else:
         return False
@@ -41,9 +44,13 @@ root_tweets = filter(topiccleaner, root_tweets_extended)
 
 tweets_collection = []
 classes = []
+lens = []
+min_retweets = 20
 for root_tweet in root_tweets:
     retweets = persister.loadRetweets(root_tweet['tweet']['tweet_id'])
-    if retweets and len(retweets)>=10: #limiting just stories with more than 10 retweets
+    lens.append(len(retweets))
+    print len(retweets)
+    if retweets and len(retweets)>=min_retweets: #limiting just stories with more than 10 retweets
         #retweets.insert(0, root_tweet) #insert root tweet at the beggining of the list
         tweets_collection.append(retweets)
         classes.append(root_tweet['class'])
@@ -55,38 +62,19 @@ users = np.array(list(set([item['user_id'] for sublist in tweets_collection for 
 #users.remove(ROOTUSER)
 
 
-#f1 = open('tweetcol.data', 'w')
-#f2 = open('users.data', 'w')
-#
-#pickle.dump(tweets_collection, f1)
-#pickle.dump(users, f2)
-#
-#f1.close()
-#f2.close()
-#    
-#f1 = open('tweetcol.data', 'r')
-#
-#tweets_collection = pickle.load(f1)
-#
-#users = list(set([item['user_id'] for sublist in tweets_collection[:10] for item in sublist]))
-
-
 ################
 # 1 - monta matriz com tweets
-print "Fase 2!"
 
-tweets_matrix = zeros((len(users), len(tweets_collection))) #empty matrix
+tweets_matrix = np.zeros((len(users), len(tweets_collection))) #empty matrix
 
-col_num = 0
-for col in tweets_collection:
+for col_num, col in enumerate(tweets_collection):
     #get the positions of the users, in users list
-    col_indexes = array([np.where(users == tweet['user_id']) for tweet in col]) 
+    col_indexes = np.array([int(np.where(users == tweet['user_id'])[0]) for tweet in col]) 
     tweets_matrix[col_indexes, col_num] = 1
-    col_num += 1
     
 #remove bots from matrix
 rsum = np.sum(tweets_matrix, axis=1)
-bots = np.argsort(rsum)[-1]
+bots = np.where(rsum > 0.8*len(tweets_collection))[0] #considera quem retweetou mais que 80% dos tweets um bot
 
 tweets_matrix = np.delete(tweets_matrix, bots, axis=0)
 users = np.delete(users, bots)
@@ -94,16 +82,17 @@ users = np.delete(users, bots)
 
 
 #clear empty lines or colums
-rsum = np.sum(tweets_matrix, axis=1)
-zr = np.where(rsum==0)
-tweets_matrix = np.delete(tweets_matrix, zr, axis=0)
-users = np.delete(users, zr)
-    
 lsum = np.sum(tweets_matrix, axis=0)
-zl = np.where(lsum<10)
+zl = np.where(lsum<min_retweets)[0]
 tweets_matrix = np.delete(tweets_matrix, zl, axis=1)
 tweets_collection = np.delete(tweets_collection, zl)
 classes = np.delete(classes, zl)
+
+
+rsum = np.sum(tweets_matrix, axis=1)
+zr = np.where(rsum==0)[0]
+tweets_matrix = np.delete(tweets_matrix, zr, axis=0)
+users = np.delete(users, zr)
 
 
 #################
@@ -146,7 +135,7 @@ centres, xtoc, dist = kmeans(X, ncluster, initcentres=None, metric="cosine", max
 cols = []
 for j in range(ncluster):
     for i in where(xtoc == j)[0]:
-        print tweets_collection[i][0]['text'][14:] 
+        print classes[i], "\t", tweets_collection[i][0]['text'][14:] 
         cols.append(i)
     print "\n\n"
 
@@ -197,8 +186,7 @@ clean_edges = []
 #dirty_edges = []
 
 total = float(len(nodes_list))
-count = 0
-for n in nodes_list:
+for count, n in enumerate(nodes_list):
    dirty_edges = []
    print("%s/%s" %(count, total))
    try:   
@@ -213,21 +201,22 @@ for n in nodes_list:
       #dirty_edges.append((n, nei))
    f.close()
    #GDirty.add_edges_from(dirty_edges)
-   GClean.add_edges_from(clean_edges)
-   count += 1
+
+GClean.add_edges_from(clean_edges)
 
 
 
-#clean dirty graph
-count = 0
-total = float(len(GDirty))
 
-iterable = GDirty.degree_iter()
-for n,d in iterable:
-    if n not in nodes_list and d < 2:
-        GDirty.remove_node(n)
-    count += 1
-    print("%s/%s" %(count, total))
+##clean dirty graph
+#count = 0
+#total = float(len(GDirty))
+#
+#iterable = GDirty.degree_iter()
+#for n,d in iterable:
+#    if n not in nodes_list and d < 2:
+#        GDirty.remove_node(n)
+#    count += 1
+#    print("%s/%s" %(count, total))
 
 
 
@@ -308,27 +297,6 @@ for com in set(partition.values()):
         print community_matrix[com, t]/comsizes[com], tweets_collection[t][0]['text'][14:] 
     print "\n"
         
-
-#kmeans 2
-
-from kmeansdist import *# kmeans
-
-dim = 10
-ncluster = 50
-kmsample = 100  # 0: random centres, > 0: kmeanssample
-kmdelta = .001
-kmiter = 100
-metric = "cosine"  # "chebyshev" = max, "cityblock" L1,  Lqmetric
-seed = 1
-X = community_matrix.transpose()
-
-randomcentres = randomsample(X, ncluster)
-centres, xtoc, dist = kmeans(X, randomcentres, metric=metric, verbose=2)
-
-for j in range(ncluster):
-    for i in where(xtoc == j)[0]:
-        print tweets_collection[i][0]['text'] 
-    print "\n\n"
     
     
     
@@ -337,15 +305,16 @@ for j in range(ncluster):
 #propagacao!
     
 def propagate(user, graph, tweet, visited):
-    #visited.append(user)
-    for u, follower in graph.out_edges([user]):
-        #if follower not in visited:
-            #propagate(follower, graph, tweet, visited)    
-        #tweet[users.index(follower)] += 0.4 * (1-tweet[users.index(follower)]) #valor arbitrario!
-        tweet[np.where(users==follower)] = 1
-#        if tweet[users.index(follower)] < 1:
-#            tweet[users.index(follower)] += 1.0/len(graph.in_edges([follower]))
-        #print len(visited)
+    #visited.append(user)    
+    if user in graph:
+        for follower in graph.successors(user):
+            #if follower not in visited:
+                #propagate(follower, graph, tweet, visited)    
+            #tweet[users.index(follower)] += 0.4 * (1-tweet[users.index(follower)]) #valor arbitrario!
+            tweet[np.where(users==follower)] = 1
+            #if tweet[np.where(users==follower)] < 1:
+            #    tweet[np.where(users==follower)] += 1.0/len(graph.in_edges([follower]))
+            #print len(visited)
  
 #tweets_matrix_sparse = tweets_matrix.copy()
 tweets_matrix = tweets_matrix_sparse.copy()      
@@ -354,8 +323,17 @@ for tweet in tweets_matrix.T:
         #get user followers and increase their values
         propagate(users[user], GClean, tweet, [])
         
-        
+
+
+
 #tweets_matrix = tweets_matrix_sparse #restore (if needed)
+
+
+#for node in GClean:
+#    for suc in GClean.successors(node):
+#        if node not in GClean.successors(suc):
+#            print node, suc
+#            break
         
 ######
 #biclusterizacao
@@ -436,11 +414,14 @@ import random
 from scipy.spatial.distance import cdist
 from operator import itemgetter
 
-k = 200
+k = 400
 samplei = random.sample(xrange(tweets_matrix.shape[1]), k)
 samples = tweets_matrix[:,samplei]
+samples_sparse = tweets_matrix_sparse[:,samplei]
 
 D = cdist(tweets_matrix.T, samples.T, metric="jaccard")
+D_sparse = cdist(tweets_matrix_sparse.T, samples_sparse.T, metric="jaccard")
+
 
 
 #imprime tweet sendo comparado
@@ -457,9 +438,11 @@ D = cdist(tweets_matrix.T, samples.T, metric="jaccard")
     
 
 
-tamanhos = [1, 3, 5, 7, 11, 25]
+tamanhos = [1, 3, 5, 7, 11, 25, 40, 50]
 resultados_ok = dict([(i, 0) for i in tamanhos])
 resultados_nulo = dict([(i, 0) for i in tamanhos])
+resultados_ok_sparse = dict([(i, 0) for i in tamanhos])
+
 
 for i in range(k):
     gabarito = classes[samplei[i]]
@@ -476,10 +459,18 @@ for i in range(k):
         contagem = [(vizinhos.count(v), v) for v in set(vizinhos)]
         if max(contagem, key=itemgetter(0))[1] == gabarito:
                 resultados_nulo[tamanhos[j]] += 1
+                
+    #faz os mesmos calculos com matriz esparsa
+    sorts = np.argsort(D_sparse[:,i])
+    for j in range(len(tamanhos)):
+        vizinhos = list(classes[sorts[1:(tamanhos[j]+1)]])
+        contagem = [(vizinhos.count(v), v) for v in set(vizinhos)]
+        if max(contagem, key=itemgetter(0))[1] == gabarito:
+                resultados_ok_sparse[tamanhos[j]] += 1
         
 k = float(k)
 for i in tamanhos:
-    print "k",i,": ",resultados_ok[i]/k,resultados_nulo[i]/k
+    print "k",i,": ",resultados_ok_sparse[i]/k,resultados_ok[i]/k,resultados_nulo[i]/k
 k = int(k)    
  
     
@@ -492,3 +483,55 @@ k = int(k)
     
 ##########################
 #biclustering community matrix
+    
+    
+    
+##############################
+#regressao linear
+Y = array([class_dict[classe] for classe in classes])
+
+X = tweets_matrix.T
+
+
+total_size = Y.size
+random_indices = np.random.permutation(total_size)
+
+
+train_limit = 0.5
+Y_train = Y[:int(train_limit * total_size)]
+X_train = X[:int(train_limit * total_size)]
+
+Y_test = Y[int(train_limit * total_size):]
+X_test = X[int(train_limit * total_size):]
+
+
+teta = dot(linalg.pinv(X_train), Y_train)
+    
+Y_l = np.around(dot(X_test, teta))
+
+Y_ll = np.around(dot(X_train, teta))
+
+acertos = sum(Y_test == Y_l)
+
+
+
+#svm
+from sklearn import svm
+
+classificador = svm.SVC(kernel='linear')
+classificador.fit(X_train, Y_train)
+
+
+Y_classificado = classificador.predict(X_test)
+print Y_classificado
+
+
+acertos = sum(Y_test == Y_classificado) / float(len(Y_classificado))
+
+Y_class2 = classificador.predict(X_train)
+
+acertos = sum(Y_train == Y_class2)
+
+total = acertos / float(len(Y_class2))
+##############################
+#LDA

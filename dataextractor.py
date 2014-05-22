@@ -10,7 +10,11 @@ from tweepy.streaming import StreamListener
 from tweepy import OAuthHandler
 from tweepy import Stream
 
-SOURCE_ID = '14594813'
+FOLHA = '14594813'
+ESTADAO = '9317502'
+UOLNOT = '14594698'
+G1 = '8802752'
+R7 = '65473559'
 
 json_fp = open('credentials.json')
 cred = json.load(json_fp)
@@ -27,8 +31,11 @@ class StdOutListener(StreamListener):
         parsed = json.loads(data)    
         
         user_id = int(parsed['user']['id_str'])
-        print parsed['user']['name'], parsed['user']['screen_name']
-        
+        if user_id in userslist:
+            print ">>>>>USUARIO REPETIDO:",  parsed['user']['name'], parsed['user']['screen_name']
+
+        else:
+            print "USUARIO NOVO:",  parsed['user']['name'], parsed['user']['screen_name']        
         
         
         #guardar tweet no banco de dados geral
@@ -39,14 +46,14 @@ class StdOutListener(StreamListener):
         #ver se o id eh unico e incrementar ids        
         if user_id not in userslist:
             persister.insertUser(parsed['user'])
-            userslist.append(user_id)
+            userslist.add(user_id)
             
-        elif user_id in userslist:
-            print ">>>>>USUARIO REPETIDO!"
+        else:
             persister.saveRecurrentUser(user_id)
             
             
-        print parsed['text'] #TODO tratar caracteres mto bizarros
+        print parsed['text']
+        print
 
         return True
 
@@ -57,14 +64,14 @@ if __name__ == '__main__':
 
 
     userslist = persister.loadUsers()
+    userslist = set(userslist) #use set, to make it much more efficient
+    print("lista carregada!")
 
     l = StdOutListener()
     auth = OAuthHandler(cred['twitter']['consumer_key'], cred['twitter']['consumer_secret'])
     auth.set_access_token(cred['twitter']['access_token'], cred['twitter']['access_token_secret'])
 
     stream = Stream(auth, l)
-    stream.filter(follow=[SOURCE_ID])
-    #TODO: explorar novas formas de pegar conteudo
-    #stream.filter(follow=[followedUserIds[0:2])])    
+    stream.filter(follow=[FOLHA, ESTADAO, UOLNOT, G1, R7])
     
     
