@@ -8,7 +8,7 @@ Created on Sat Dec 14 13:36:10 2013
 import tweepy
 import time
 import json
-from PersistencyLayer import TweetsPersister
+from persistencylayer import TweetsPersister
 
 FOLHA = '14594813'
 ESTADAO = '9317502'

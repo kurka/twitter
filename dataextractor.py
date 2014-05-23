@@ -5,7 +5,7 @@ Created on Thu Dec 12 16:56:09 2013
 @author: kurka
 """
 import json
-from PersistencyLayer import TweetsPersister
+from persistencylayer import TweetsPersister
 from tweepy.streaming import StreamListener
 from tweepy import OAuthHandler
 from tweepy import Stream

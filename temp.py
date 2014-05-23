@@ -304,6 +304,19 @@ for com in set(partition.values()):
 ###########
 #propagacao!
     
+    
+
+
+clean_cols = []
+for col, user in enumerate(users):
+    if user in GClean:
+        clean_cols.append(col)
+
+tweets_matrix_clean = tweets_matrix_sparse[clean_cols,:].copy()
+users_clean = users[clean_cols].copy()
+users_sparse = users  
+users = users_clean      
+    
 def propagate(user, graph, tweet, visited):
     #visited.append(user)    
     if user in graph:
@@ -317,12 +330,30 @@ def propagate(user, graph, tweet, visited):
             #print len(visited)
  
 #tweets_matrix_sparse = tweets_matrix.copy()
-tweets_matrix = tweets_matrix_sparse.copy()      
+#tweets_matrix = tweets_matrix_sparse.copy()      
+tweets_matrix = tweets_matrix_clean.copy()      
 for tweet in tweets_matrix.T:
     for user in np.where(tweet==1)[0]:
         #get user followers and increase their values
         propagate(users[user], GClean, tweet, [])
         
+
+
+
+#limpa ainda mais
+
+#clear empty lines or columns
+rsum = np.sum(tweets_matrix, axis=1)
+zr = np.where(rsum<5)[0]
+tweets_matrix = np.delete(tweets_matrix, zr, axis=0)
+users = np.delete(users, zr)
+
+lsum = np.sum(tweets_matrix, axis=0)
+zl = np.where(lsum<min_retweets)[0]
+tweets_matrix = np.delete(tweets_matrix, zl, axis=1)
+tweets_collection = np.delete(tweets_collection, zl)
+classes = np.delete(classes, zl)
+
 
 
 
@@ -530,8 +561,6 @@ acertos = sum(Y_test == Y_classificado) / float(len(Y_classificado))
 
 Y_class2 = classificador.predict(X_train)
 
-acertos = sum(Y_train == Y_class2)
-
-total = acertos / float(len(Y_class2))
+acertos = sum(Y_train == Y_class2) / float(len(Y_class2))
 ##############################
 #LDA

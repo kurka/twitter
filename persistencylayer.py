@@ -13,6 +13,7 @@ class TweetsPersister():
                                 user = self.cred['db']['user'],
                                 passwd = self.cred['db']['password'],
                                 charset = self.cred['db']['charset'])
+      print "conectado com o servidor!"
 
    def query(self, sql, params):
       try:
