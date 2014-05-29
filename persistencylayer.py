@@ -1,11 +1,13 @@
 import MySQLdb
 import json
+from warnings import filterwarnings
 
 class TweetsPersister():
    def __init__(self):
       json_fp = open('credentials.json')
       self.cred = json.load(json_fp)
       self.connect()
+      filterwarnings('ignore', category = MySQLdb.Warning)
     
    def connect(self):
       self.db = MySQLdb.connect(host = self.cred['db']['host'],
@@ -13,7 +15,6 @@ class TweetsPersister():
                                 user = self.cred['db']['user'],
                                 passwd = self.cred['db']['password'],
                                 charset = self.cred['db']['charset'])
-      print "conectado com o servidor!"
 
    def query(self, sql, params):
       try:
@@ -31,11 +32,12 @@ class TweetsPersister():
             cursor.execute(sql)
       return cursor
       
-      
+   def commit(self):
+      self.db.commit()
 
    def insertRawTweet(self, string):
       self.query("INSERT INTO tweets_raw VALUES (%s)", string)
-      self.db.commit()
+      self.commit()
       return
 
    def insertParsedTweet(self, tweet):
@@ -106,7 +108,7 @@ class TweetsPersister():
               )
               c.execute("INSERT INTO tweets_hashtag (tweet_id, hashtag_text, hashtag_indices) VALUES (%s, %s, %s)", hashtag_data)
 
-     self.db.commit()
+     self.commit()
      return
 
    def insertUser(self, user):
@@ -130,10 +132,38 @@ class TweetsPersister():
          user['lang'],
          (1 if user['contributors_enabled'] else 0),
          0,
-         0
+         0,
       )
-      self.query("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed, friend_of_source) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
-      self.db.commit()
+      self.query("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed, friend_of_source, inserted_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())", data)
+      self.commit()
+      return
+      
+   def insertUserObject(self, user, processed_id=0):
+      """insert into database tweepy 'user' object, returned by get_user function """
+      data = (
+         user.id,
+         user.name,
+         user.screen_name,
+         user.location,
+         user.description,
+         user.url,
+         user.followers_count,
+         user.friends_count,
+         user.listed_count,
+         user.created_at.strftime('%a %b %d %H:%M:%S +0000 %Y'),
+         user.favourites_count,
+         user.utc_offset,
+         user.time_zone,
+         (1 if user.geo_enabled else 0),
+         (1 if user.verified else 0),
+         user.statuses_count,
+         user.lang,
+         (1 if user.contributors_enabled else 0),
+         processed_id,
+         0,
+      )
+      self.query("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed, friend_of_source, inserted_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())", data)
+      self.commit()
       return
 
 
@@ -227,69 +257,115 @@ class TweetsPersister():
       users = [element for tupl in rows for element in tupl]
 
       return users
-       
-
-   def loadUnprocessedRecurrentUser(self, user_processed=0):
-      """
-      Load unprocessed user
-      @return Single user_id
-      """
-      sql = "SELECT user_id FROM users WHERE user_processed=%s AND recurrent=1 LIMIT 1"
-      data = (user_processed,)
-      c = self.query(sql, data)
-      row = c.fetchone()
-      self.db.commit()
-      if row == None:
-          return None
-      else:
-          return row[0]
+     
 
       
-   def loadUnprocessedUser(self, user_processed=0):
+   def loadUnprocessedUser(self, user_processed=0, recurrent=0):
       """
       Load unprocessed user
       @return Single user_id
       """
-      sql = "SELECT user_id FROM users WHERE user_processed=%s LIMIT 1"
-      data = (user_processed,)
+      sql = "SELECT user_id FROM users WHERE user_processed=%s AND recurrent=%s ORDER BY inserted_at LIMIT 1"
+      data = (user_processed, recurrent)
       c = self.query(sql, data)
       row = c.fetchone()
-      self.db.commit()
       if row == None:
           return None
       else:
           return row[0]
+          
+   def popQueueUser(self):
+       """
+       Load user from table users_queue.
+       Delete user, after loading it (queue operation)
+       """
+       #TODO: deal with concurrency 
+       #(maybe with locks: http://dev.mysql.com/doc/refman/5.1/en/miscellaneous-functions.html#function_get-lock
+       #http://stackoverflow.com/questions/423111/whats-the-best-way-of-implementing-a-messaging-queue-table-in-mysql)        
+        
+        
+       #get the top of the queue
+       sql = "SELECT user_id FROM users_queue order by id limit 1"
+       data = ()
+       c = self.query(sql, data)
+       row = c.fetchone()
+       self.commit()
+       if row == None: #queue is empty
+           return None
+       else: #remove from queue
+           user = row[0]
+           sql = "DELETE FROM users_queue WHERE user_id=%s"
+           data = (user,)
+           c = self.query(sql, data)
+           self.commit()
+           return user
+
+   def pushQueueUser(self, users):
+       """
+       Push list of users into the queue.
+       
+       Args:
+           users: list of ids to be pushed
+       """
+       
+       for chunk in xrange(0, len(users), 1000): #divide list in chunks of 1000
+           #build string with numbers in brackets
+           strusers = "(" + "),(".join(map(str, users[chunk:chunk+1000])) + ")" 
+           sql = "INSERT IGNORE INTO users_queue(user_id) VALUES %s;" %strusers
+           data = ()
+           c = self.query(sql, data)
+           self.commit()
           
           
    def saveProcessedUser(self, user_id, value=1):
       sql = "UPDATE users SET user_processed=%s WHERE user_id=%s"
       data = (value, user_id)
       self.query(sql, data)
-      self.db.commit()
+      self.commit()
       return
 
    def saveRecurrentUser(self, user_id, value=1):
       sql = "UPDATE users SET recurrent=%s WHERE user_id=%s"
       data = (value, user_id)
       self.query(sql, data)
-      self.db.commit()
+      self.commit()
       return 
 
    def saveFollower(self, user_id):   
       sql = "UPDATE users SET friend_of_source=1 WHERE user_id=%s"
       data = (user_id,)
       self.query(sql, data)
-      self.db.commit()
+      self.commit()
       return       
 
+
+   def findUser(self, user_id):
+      """
+      User loader.
+      @param user_id
+      @return user's time of insertion, if found. "None" otherwise.
+      """
+      
+      sql = "SELECT inserted_at FROM users WHERE user_id = %s"
+      params = (user_id,)
+      c = self.query(sql, params)
+      row = c.fetchone()
+      
+      if row is None:
+         return None
+      else:
+          return row[0]
+
+      
+      
    def loadUser(self, user_id):
       """
       User loader.
       @param user_id
       @return Populated user dictionary, if found. "None" otherwise.
       """
-      sql = "SELECT user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_favourites_count FROM user WHERE user_id = %s"
-      params = user_id
+      sql = "SELECT user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_favourites_count FROM users WHERE user_id = %s"
+      params = (user_id,)
       c = self.query(sql, params)
       row = c.fetchone()
       
@@ -321,7 +397,7 @@ class TweetsPersister():
          tweet['id']
       )
       self.query(sql, data)
-      self.db.commit()
+      self.commit()
       return
 
 
@@ -396,4 +472,25 @@ class TweetsPersister():
 #      `friend_of_source` smallint(6) DEFAULT 0,
 #      `recurrent` smallint(6) DEFAULT 0
 #    );
-#    (FALTA TABLEW tweets_raw)
+#    (FALTA TABLE tweets_raw)
+
+#CREATE TABLE 'graph_edges' (
+#        'from_node' bigint(20) unsigned NOT NULL,
+#        'to_node' bigint(20) unsigned NOT NULL
+#        );
+
+
+#create table users_queue(
+#  id int(20) auto_increment not null primary key,
+#  user_id bigint(20) unsigned not null,
+#  unique key user_id(user_id)
+#);
+
+
+#SELECT STR_TO_DATE('Sun May 18 11:59:09 +0000 2014', '%a %b %d %H:%i:%s +0000 %Y');
+#update users u set inserted_at = (select min(STR_TO_DATE(tweet_created_at, '%a %b %d %H:%i:%s +0000 %Y')) from tweets where tweets.user_id = u.user_id);
+
+
+#
+
+
