@@ -86,7 +86,7 @@ class NetworkBuilder():
                 if time_to_reset > 0:
                     time.sleep(time_to_reset)
                 else:
-                    time.sleep(10) #sleep at least 10 seconds
+                    time.sleep(5) #sleep at least 10 seconds
         
                 #update rate limits        
                 rl = self.api.rate_limit_status()
@@ -134,19 +134,20 @@ class NetworkBuilder():
                     new_user = self.persister.popQueueUser() 
                     
                     #look for users not already in database
-                    while new_user and self.persister.finduser(new_user):
-                        if new_user in self.source_ids: #temporary exception
-                            break 
-                        new_user = self.persister.popQueueUser()
+                    if new_user not in self.source_ids:  #temporary exception
+                        while new_user and self.persister.findUser(new_user):
+                            if new_user in self.source_ids:
+                                break 
+                            new_user = self.persister.popQueueUser()
                     
-                    if new_user:
-                        #insert user in database
-                        try:
-                            userobject = self.api.get_user(new_user)
-                            self.persister.insertUserObject(userobject, start_pid)
-                        except (tweepy.TweepError), e:
-                            print e
-                            continue
+                        if new_user:
+                            #insert user in database
+                            try:
+                                userobject = self.api.get_user(new_user)
+                                self.persister.insertUserObject(userobject, start_pid)
+                            except (tweepy.TweepError), e:
+                                print e
+                                continue
                 elif direction == 'friends':
                     new_user = self.persister.loadUnprocessed(user_processed=start_pid)
                     
