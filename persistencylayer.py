@@ -1,6 +1,10 @@
 import MySQLdb
 import json
 from warnings import filterwarnings
+import random
+
+
+#TODO: consertar identacao!!
 
 class TweetsPersister():
    def __init__(self):
@@ -111,7 +115,7 @@ class TweetsPersister():
      self.commit()
      return
 
-   def insertUser(self, user):
+   def insertUser(self, user, origin=1):
       data = (
          user['id'],
          user['name'],
@@ -131,14 +135,15 @@ class TweetsPersister():
          user['statuses_count'],
          user['lang'],
          (1 if user['contributors_enabled'] else 0),
-         0,
-         0,
+         0, #got_followers
+         0, #got_following
+         origin
       )
-      self.query("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed, friend_of_source, inserted_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())", data)
+      self.query("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, got_followers, got_friends, origin, inserted_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())", data)
       self.commit()
       return
       
-   def insertUserObject(self, user, processed_id=0):
+   def insertUserObject(self, user, origin=1):
       """insert into database tweepy 'user' object, returned by get_user function """
       data = (
          user.id,
@@ -159,10 +164,11 @@ class TweetsPersister():
          user.statuses_count,
          user.lang,
          (1 if user.contributors_enabled else 0),
-         processed_id,
-         0,
+         0, #got_followers
+         0, #got_following
+         origin
       )
-      self.query("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, user_processed, friend_of_source, inserted_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())", data)
+      self.query("INSERT INTO users (user_id, user_name, user_screen_name, user_location, user_description, user_url, user_followers_count, user_friends_count, user_listed_count, user_created_at, user_favourites_count, user_utc_offset, user_time_zone, user_geo_enabled, user_verified, user_statuses_count, user_lang, user_contributors_enabled, got_followers, got_friends, origin, inserted_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())", data)
       self.commit()
       return
 
@@ -197,7 +203,7 @@ class TweetsPersister():
       @param tweet_id
       @return Populated tweet dictionary, if tweet found. "None" otherwise.
       """
-      sql = "SELECT tweet_id, tweet_text, tweet_created_at FROM tweets WHERE user_id = %s"
+      sql = "SELECT tweet_id, tweet_text, tweet_created_at FROM tweets WHERE user_id = %s order by inserted_at"
       data = (user,)
       c = self.query(sql, data)
       
@@ -260,13 +266,23 @@ class TweetsPersister():
      
 
       
-   def loadUnprocessedUser(self, user_processed=0, recurrent=0):
+   def loadUnprocessedUser(self, direction, origin='active'):
       """
       Load unprocessed user
       @return Single user_id
       """
-      sql = "SELECT user_id FROM users WHERE user_processed=%s AND recurrent=%s ORDER BY inserted_at LIMIT 1"
-      data = (user_processed, recurrent)
+      
+      if origin=='active':
+          originid=1
+      elif origin=='queue':
+          originid=2
+      
+      
+      if direction == 'followers':
+          sql = "SELECT user_id FROM users WHERE origin=%s AND got_followers=0 ORDER BY recurrent DESC, inserted_at LIMIT 1"
+      elif direction == 'friends':
+          sql = "SELECT user_id FROM users WHERE origin=%s AND got_friends=0 ORDER BY recurrent DESC, inserted_at LIMIT 1"
+      data = (originid,)
       c = self.query(sql, data)
       row = c.fetchone()
       if row == None:
@@ -285,11 +301,16 @@ class TweetsPersister():
         
         
        #get the top of the queue
-       sql = "SELECT user_id FROM users_queue order by id limit 1"
+       sql = "SELECT user_id FROM users_queue where hits > 100"
        data = ()
        c = self.query(sql, data)
-       row = c.fetchone()
-       self.commit()
+       try:
+           row = random.choice(c.fetchall())
+       except:
+           sql = "SELECT user_id FROM users_queue order by hits desc limit 1"
+           c = self.query(sql, data)
+           row = c.fetchone()
+           
        if row == None: #queue is empty
            return None
        else: #remove from queue
@@ -300,26 +321,56 @@ class TweetsPersister():
            self.commit()
            return user
 
-   def pushQueueUser(self, users):
+
+#   def pushQueueUser(self, users):
+#       """
+#       Push list of users into the queue.
+#       
+#       Args:
+#           users: list of ids to be pushed
+#       """
+#       
+#       for chunk in xrange(0, len(users), 1000): #divide list in chunks of 1000
+#           #build string with numbers in brackets
+#           strusers = "(" + "),(".join(map(str, users[chunk:chunk+1000])) + ")" 
+#           sql = "INSERT IGNORE INTO users_queue(user_id) VALUES %s;" %strusers
+#           data = ()
+#           self.query(sql, data)
+#           self.commit()
+ 
+   def pushQueueUsers(self, users):
        """
        Push list of users into the queue.
        
+       If user already exists, increment "hit" field.
        Args:
            users: list of ids to be pushed
        """
-       
-       for chunk in xrange(0, len(users), 1000): #divide list in chunks of 1000
+       chunksize = 100
+       for chunk in xrange(0, len(users), chunksize): #divide list in chunks
            #build string with numbers in brackets
-           strusers = "(" + "),(".join(map(str, users[chunk:chunk+1000])) + ")" 
-           sql = "INSERT IGNORE INTO users_queue(user_id) VALUES %s;" %strusers
+           users_set = users[chunk:chunk+chunksize]
+           strusers = str(map(None, users_set, [1]*len(users_set))).strip('[]')
+           sql = "INSERT INTO users_queue (user_id, hits) VALUES %s ON DUPLICATE KEY UPDATE hits = hits + 1" %strusers
            data = ()
-           c = self.query(sql, data)
-           self.commit()
+           self.query(sql, data)
+           self.commit()       
+       
+       return 
+       
+       
           
+   def saveProcessedUser(self, user_id, direction='followers', error=False):
+       
+      if not error:
+          if direction == 'followers':
+              sql = "UPDATE users SET got_followers=1 WHERE user_id=%s"
+          elif direction == 'friends':
+                  sql = "UPDATE users SET got_friends=1 WHERE user_id=%s"
+      else:
+          sql = "UPDATE users SET got_followers=2, got_friends=2 WHERE user_id=%s"
           
-   def saveProcessedUser(self, user_id, value=1):
-      sql = "UPDATE users SET user_processed=%s WHERE user_id=%s"
-      data = (value, user_id)
+      data = (user_id,)
       self.query(sql, data)
       self.commit()
       return
@@ -336,7 +387,23 @@ class TweetsPersister():
       data = (user_id,)
       self.query(sql, data)
       self.commit()
-      return       
+      return 
+
+   def isUserProcessed(self, user_id):
+       """
+       Check if both fields 'got_followers' and 'got_friends' are equal 1,
+       meaning that we already got information from followers and friends of user
+       """
+       sql = "SELECT got_followers, got_friends FROM users WHERE user_id=%s"
+       data = (user_id,)
+       c = self.query(sql, data)
+       row = c.fetchone()
+       
+       if row[0]==1 and row[1]==1:
+           return True
+       else:
+           return False
+       
 
 
    def findUser(self, user_id):
@@ -469,6 +536,9 @@ class TweetsPersister():
 #      `user_lang` varchar(10) CHARACTER SET utf8 DEFAULT NULL,
 #      `user_contributors_enabled` smallint(6) DEFAULT NULL,
 #      `user_processed` smallint(6) DEFAULT 0,
+#        `got_followers` smallint(6) DEFAULT 0,
+#        `got_friends` smallint(6) DEFAULT 0,
+#        `origin` smallint(6) DEFAULT 0, #1 active, 2 queue 
 #      `friend_of_source` smallint(6) DEFAULT 0,
 #      `recurrent` smallint(6) DEFAULT 0
 #    );
@@ -483,14 +553,14 @@ class TweetsPersister():
 #create table users_queue(
 #  id int(20) auto_increment not null primary key,
 #  user_id bigint(20) unsigned not null,
+#  hits int(10) not null default 0,  
 #  unique key user_id(user_id)
+#  
 #);
 
 
 #SELECT STR_TO_DATE('Sun May 18 11:59:09 +0000 2014', '%a %b %d %H:%i:%s +0000 %Y');
 #update users u set inserted_at = (select min(STR_TO_DATE(tweet_created_at, '%a %b %d %H:%i:%s +0000 %Y')) from tweets where tweets.user_id = u.user_id);
 
-
-#
 
 
