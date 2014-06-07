@@ -49,7 +49,6 @@ min_retweets = 20
 for root_tweet in root_tweets:
     retweets = persister.loadRetweets(root_tweet['tweet']['tweet_id'])
     lens.append(len(retweets))
-    print len(retweets)
     if retweets and len(retweets)>=min_retweets: #limiting just stories with more than 10 retweets
         #retweets.insert(0, root_tweet) #insert root tweet at the beggining of the list
         tweets_collection.append(retweets)
@@ -75,6 +74,8 @@ for col_num, col in enumerate(tweets_collection):
 #remove bots from matrix
 rsum = np.sum(tweets_matrix, axis=1)
 bots = np.where(rsum > 0.8*len(tweets_collection))[0] #considera quem retweetou mais que 80% dos tweets um bot
+#TODO: melhorar definicao de bots. Talvez ver por timestamp
+
 
 tweets_matrix = np.delete(tweets_matrix, bots, axis=0)
 users = np.delete(users, bots)
@@ -83,7 +84,7 @@ users = np.delete(users, bots)
 
 #clear empty lines or colums
 lsum = np.sum(tweets_matrix, axis=0)
-zl = np.where(lsum<min_retweets)[0]
+zl = np.where(lsum==0)[0]
 tweets_matrix = np.delete(tweets_matrix, zl, axis=1)
 tweets_collection = np.delete(tweets_collection, zl)
 classes = np.delete(classes, zl)
@@ -93,6 +94,23 @@ rsum = np.sum(tweets_matrix, axis=1)
 zr = np.where(rsum==0)[0]
 tweets_matrix = np.delete(tweets_matrix, zr, axis=0)
 users = np.delete(users, zr)
+
+#tweets_matrix_original = tweets_matrix.copy()
+
+
+#remove users with less than 5 tweets in history
+#clear empty lines or colums
+rsum = np.sum(tweets_matrix, axis=1)
+zr = np.where(rsum<5)[0]
+tweets_matrix = np.delete(tweets_matrix, zr, axis=0)
+users = np.delete(users, zr)
+
+
+lsum = np.sum(tweets_matrix, axis=0)
+zl = np.where(lsum==0)[0]
+tweets_matrix = np.delete(tweets_matrix, zl, axis=1)
+tweets_collection = np.delete(tweets_collection, zl)
+classes = np.delete(classes, zl)
 
 
 #################
@@ -123,7 +141,7 @@ img.show()
 #2- kmeans varias distancias
 from kurkameans import kmeans
 ncluster = 20
-X = tweets_matrix.transpose()
+X = tweets_matrix.T
 
 import random    
 initcentres = X[random.sample(xrange(X.shape[0]), ncluster)]
@@ -275,7 +293,7 @@ dendo = community.generate_dendogram(G)
 
 
 #agrupar as linhas!
-community_matrix = zeros((len(set(partition.values())), len(tweets_collection))) #empty matrix
+community_matrix = np.zeros((len(set(partition.values())), len(tweets_collection))) #empty matrix
 
 
 #jeito 1: soma os valores de toda a comunidade
@@ -283,7 +301,7 @@ row_num = 0
 for com in set(partition.values()):
     list_nodes = [node for node in partition.keys()
                                 if partition[node] == com]
-    row_indexes = array([users.index(user) for user in list_nodes]) 
+    row_indexes = np.array([int(np.where(users == user)[0]) for user in list_nodes]) 
     print len(list_nodes) #get the size of the list of nodes
     community_matrix[row_num, :] = tweets_matrix[row_indexes, :].sum(0)
     row_num += 1
@@ -291,11 +309,13 @@ for com in set(partition.values()):
     
 comsizes = np.bincount(partition.values())
 for com in set(partition.values()):
-    print "particao", com, comsizes[com]
     toptweets = np.argsort(community_matrix[com,:])[::-1][:10]
-    for t in toptweets:
-        print community_matrix[com, t]/comsizes[com], tweets_collection[t][0]['text'][14:] 
-    print "\n"
+    if comsizes[com] > 10:
+        print "particao", com, comsizes[com]
+        for t in toptweets:
+            if community_matrix[com,t] > 0:
+                print community_matrix[com, t]/comsizes[com], sum(tweets_matrix[:,t])/float(tweets_matrix.shape[0]), tweets_collection[t][0]['text'][14:] 
+        print "\n"
         
     
     
@@ -304,7 +324,7 @@ for com in set(partition.values()):
 ###########
 #propagacao!
     
-    
+tweets_matrix_sparse = tweets_matrix.copy()
 
 
 clean_cols = []
@@ -519,7 +539,10 @@ k = int(k)
     
 ##############################
 #regressao linear
-Y = array([class_dict[classe] for classe in classes])
+Y = np.array([class_dict[classe] for classe in classes])
+YY = list(Y)
+random.shuffle(YY)
+Y = np.array(YY)
 
 X = tweets_matrix.T
 
@@ -549,18 +572,87 @@ acertos = sum(Y_test == Y_l)
 #svm
 from sklearn import svm
 
-classificador = svm.SVC(kernel='linear')
+classificador = svm.SVC(kernel='linear', tol=2.0000000000000001)
 classificador.fit(X_train, Y_train)
 
 
 Y_classificado = classificador.predict(X_test)
-print Y_classificado
 
 
 acertos = sum(Y_test == Y_classificado) / float(len(Y_classificado))
 
 Y_class2 = classificador.predict(X_train)
 
-acertos = sum(Y_train == Y_class2) / float(len(Y_class2))
+acertos2 = sum(Y_train == Y_class2) / float(len(Y_class2))
+
+print acertos2, acertos
+
+
 ##############################
 #LDA
+
+
+
+
+
+######Análises
+from scipy.spatial.distance import cdist
+import random
+
+
+
+#distancia grupos X distancia global
+
+
+#global distance:
+
+X = tweets_matrix.T
+
+g_centroid = np.mean(X, axis=0)
+g_centroid.shape = (1, X.shape[1])
+g_dists = cdist(X, g_centroid, metric='euclidean')
+g_dist = np.mean(g_dists)
+print "Global dist:", g_dist
+
+for cat in class_dict.keys():
+    topics_id = np.where(classes==cat)
+    topic_centroid = np.mean(X[topics_id], axis=0)
+    topic_centroid.shape = (1, X.shape[1])
+    t_dists = cdist(X[topics_id], topic_centroid, metric='euclidean')
+    t_dist = np.mean(t_dists)
+    print cat, "dist:", t_dist
+    
+    random_id = random.sample(xrange(tweets_matrix.shape[1]), len(topics_id))
+    random_centroid = np.mean(X[random_id], axis=0)
+    random_centroid.shape = (1, X.shape[1])
+    t_dists = cdist(X[random_id], random_centroid, metric='euclidean')
+    t_dist = np.mean(t_dists)
+    print "random dist:", t_dist
+    
+    
+
+#TODO: comparar com grupos aleatorios
+
+
+#####
+#topicos diferentes por usuario
+
+
+#considera apenas usuarios com 5 ou mais tweets
+tweetssum = np.sum(tweets_matrix, axis=1)
+topusers = np.where(tweetssum>=5)[0]
+
+
+bcount = []
+for usr in tweets_matrix[topusers]:
+    usr_topics = set(classes[np.where(usr==1)])
+    print len(usr_topics), usr_topics
+    bcount.append(len(usr_topics))
+    
+np.bincount(bcount)
+
+    
+    
+
+   
+    
