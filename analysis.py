@@ -250,8 +250,7 @@ def community_matrix(tm_dict, G):
         community_matrix[row_num, :] = tweets_matrix[row_indexes, :].sum(0)
         row_num += 1
     
-    #similaridade entre comunidades
-    
+    #similaridade entre comunidades  
     comsizes = np.bincount(partition.values())
     for com in set(partition.values()):
         toptweets = np.argsort(community_matrix[com,:])[::-1][:10]
@@ -264,11 +263,11 @@ def community_matrix(tm_dict, G):
                           tm_dict['tweets_collection'][t][0]['text'][14:] 
             print "\n"
             
-    return community_matrix
+    return community_matrix, partition
 
 
-TM_dict['TM_sparse_com']['tweets_matrix'] = community_matrix(TM_dict['TM_sparse_prop'], G_sparse)
-TM_dict['TM_pop_com']['tweets_matrix'] = community_matrix(TM_dict['TM_pop_prop'], G_pop)
+TM_dict['TM_sparse_com']['tweets_matrix'], TM_dict['TM_sparse_com']['partitions'] = community_matrix(TM_dict['TM_sparse_prop'], G_sparse)
+TM_dict['TM_pop_com']['tweets_matrix'], TM_dict['TM_pop_com']['partitions']  = community_matrix(TM_dict['TM_pop_prop'], G_pop)
 
 
 #salva tudo
@@ -302,8 +301,7 @@ import matplotlib.pyplot as plt
 #KNN
     
 #seleciona grupo para classificar
-    
-tweets_matrix = TM_dict['TM_sparse']['tweets_matrix']
+
 
 n = 300 #number of samples
 samplei = random.sample(xrange(TM_dict['TM_pop']['tweets_matrix'].shape[1]), n) #select a group of tweets ids as sample
@@ -378,7 +376,6 @@ def prepare_sets(tm_dict, split=0.5):
     
     class_dict = {'cotidiano':1, 'esporte':2, 'mundo':3, 
               'poder':4, 'ilustrada':5, 'mercado':6}    
-    print tm_dict['classes'][:10]
     Y = np.array([class_dict[classe] for classe in tm_dict['classes']])
 #    Y_rand = list(Y)
 #    random.shuffle(Y_rand)
@@ -415,7 +412,7 @@ def linear_reg(tm_dict):
 
 #svm
 def svc(tm_dict):
-    (X_train, Y_train, X_test, Y_test) = prepare_sets(tm_dict)
+    (X_train, Y_train, X_test, Y_test) = prepare_sets(tm_dict, split=0.8)
     classificador = svm.SVC(kernel='linear')
     classificador.fit(X_train, Y_train)
     
@@ -429,11 +426,12 @@ def svc(tm_dict):
     print "acertos teste:", acertos
     
 
-for (key,item) in TM_dict.itervalues():
+for (key,item) in TM_dict.iteritems():
     print key
     svc(item)
 
 
+#TODO: redes neurais
 #TODO: LDA
 
 
@@ -473,20 +471,39 @@ for j in range(ncluster):
 #plt.title("clustered dataset")
 
         
-    
+###############################################################################
+#PCA
+
+from sklearn.decomposition import PCA
+
+X = TM_dict['TM_sparse']['tweets_matrix'].T
+class_dict = {'cotidiano':1, 'esporte':2, 'mundo':3, 
+          'poder':4, 'ilustrada':5, 'mercado':6}    
+y = np.array([class_dict[classe] for classe in TM_dict['TM_sparse']['classes']])
+
+
+pca = PCA(n_components=2)
+pca.fit(X)
+X = pca.transform(X)
+
+
+plt.scatter(X[:,0], X[:,1], c=y)
 
         
 ###############################################################################
 #biclusterizacao (inclose)
 
+import scipy.io as sio
+import os
+
 #inclose
 
+TM_dict['TM_pop']['partitions'] = TM_dict['TM_pop_com']['partitions']
+TM_dict['TM_sparse']['partitions'] = TM_dict['TM_sparse_com']['partitions']
 
-
-for tm_dict in [TM_dict['TM_sparse'], TM_dict['TM_pop']]:
+#for tm_dict in [TM_dict['TM_sparse'], TM_dict['TM_pop']]:
+for tm_dict in [TM_dict['TM_pop']]:
     #1-roda inclose usando octave
-    import scipy.io as sio
-    import os
     sio.savemat('matlab/twitter.mat', {'tweets_matrix':tm_dict['tweets_matrix']})
     print "executando inclose. Isso pode demorar um pouco"
     os.system("octave twitter-inclose.m")
@@ -497,17 +514,51 @@ for tm_dict in [TM_dict['TM_sparse'], TM_dict['TM_pop']]:
     #2 imprime biclusters encontrados
     tweets_collection = tm_dict['tweets_collection']
     classes = tm_dict['classes']
-    
+
+    #3 encontra comunidades que os elementos do bicluster fazem parte
+    community_users = {}
+    for com in set(tm_dict['partitions'].values()):
+        list_nodes = [node for node in tm_dict['partitions'].keys()
+                                    if tm_dict['partitions'][node] == com]
+        row_indexes = np.array([int(np.where(tm_dict['users'] == user)[0]) for user in list_nodes]) 
+        community_users[com] = row_indexes
+
+
+    bic2com = []
     for bic in biclusters:
-        print "usuarios:", len(bic['A'][0]), "tweets:", len(bic['B'][0])
-        for c in bic['B'][0]:
-            i = int(c-1)
-            print classes[i], "\t", tweets_collection[i][0]['text'][14:] 
-        print "\n"
+        bic_users = bic['B'][0]
+        nearest_com = -1
+        biggest_similarity = 0
+        #find community that contains most of the bicluster's users
+        for com in set(tm_dict['partitions'].values()):
+            similars = len(set(bic_users) & set(community_users[com]))
+            if similars > biggest_similarity:
+                nearest_com = com
+                biggest_similarity = similars
+        print "bic size:", len(bic_users), "/ com size:", len(community_users[nearest_com]),\
+              "/ in common:", biggest_similarity
+                
+        bic2com.append(nearest_com)
+    
+    print bic2com
+            
+        
+#    for bic in biclusters:
+#        print "usuarios:", len(bic['A'][0]), "tweets:", len(bic['B'][0])
+#        for c in bic['B'][0]:
+#            i = int(c-1)
+#            print classes[i], "\t", tweets_collection[i][0]['text'][14:] 
+#        print "\n"  
+#    for bic in biclusters:
+#        print "usuarios:", len(bic['A'][0]), "tweets:", len(bic['B'][0])
+#        for c in bic['B'][0]:
+#            i = int(c-1)
+#            print classes[i], "\t", tweets_collection[i][0]['text'][14:] 
+#        print "\n"
 
 
 #TODO: ver similaridades entre comunidades e biclusters
-
+TM_dict['TM_pop_com']['partitions']
 
 ###############################################################################
 #ESTATISTICAS
@@ -555,13 +606,13 @@ for cat in class_dict.keys():
 
 
 #considera apenas usuarios com 6 ou mais tweets
-tweetssum = np.sum(tweets_matrix, axis=1)
+tweetssum = np.sum(TM_dict['TM_sparse']['tweets_matrix'], axis=1)
 topusers = np.where(tweetssum>=6)[0]
 
 
 bcount = []
-for usr in tweets_matrix[topusers]:
-    usr_topics = set(classes[np.where(usr==1)])
+for usr in TM_dict['TM_sparse']['tweets_matrix'][topusers]:
+    usr_topics = set(TM_dict['TM_sparse']['classes'][np.where(usr==1)])
     print len(usr_topics), usr_topics
     bcount.append(len(usr_topics))
     
@@ -569,14 +620,38 @@ np.bincount(bcount)
 
     
 ###############################################################################
-
+#frequencia dentro de comunidades
+    
+for tm_dict in [TM_dict['TM_sparse_com']]:
+    
+    community_matrix = tm_dict['tweets_matrix']
+    partition = tm_dict['partitions']
+    tweets_matrix = TM_dict['TM_sparse']['tweets_matrix']
+    
+    #similaridade entre comunidades  
+    comsizes = np.bincount(partition.values())
+    for com in set(partition.values()):
+        toptweets = np.argsort(community_matrix[com,:])[::-1][:3]
+        if comsizes[com] > 100:
+            print "\multicolumn{3}{l}{Comunidade %d, membros: %d, total tweets: %d} \\\\\n"\
+                    % (com, comsizes[com], sum(community_matrix[com,:]))
+            for t in toptweets:
+                if community_matrix[com,t] > 0:
+                    print "%2.1f\\%% & %2.1f\\%% & %s...\\\\\n"\
+                          %(100*community_matrix[com, t]/comsizes[com], \
+                          100*sum(tweets_matrix[:,t])/float(tweets_matrix.shape[0]), \
+                          #100*community_matrix[com, t]/float(sum(tweets_matrix[:,t])), \
+                          tm_dict['tweets_collection'][t][0]['text'][14:70]) 
+                          
+            print "\hline\n"
 
 #TODO:
-#PCA
-#mapa de distribuicoes
 #LDA?
 #redes neurais
 
+
+\multicolumn{4}{l}{Comunidade 1, tamanho: 10, tweets: 20} \\
+35 & 54 & 40 & Neymar pode ser preso se mostrar a cueca com
 
 
 
