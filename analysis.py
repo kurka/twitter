@@ -24,8 +24,8 @@ root_tweets_extended = pickle.load(f)
 f.close()
 
 
-class_dict = {'cotidiano':1, 'esporte':2, 'mundo':3, 
-              'poder':4, 'ilustrada':5, 'mercado':6}
+class_dict = {'cotidiano':0, 'esporte':1, 'mundo':2, 
+              'poder':3, 'ilustrada':4, 'mercado':5}
 
 def topiccleaner(tweet):
     if tweet['class'] in class_dict.keys():
@@ -221,6 +221,7 @@ TM_dict['TM_pop_prop']['tweets_matrix'] = propagate_tweetsmatrix(TM_dict['TM_pop
 ###############################################################################
 #deteccao de comunidades
 import sys
+import copy
 sys.path.insert(0, 'louvain')
 import community
 
@@ -246,28 +247,29 @@ def community_matrix(tm_dict, G):
         list_nodes = [node for node in partition.keys()
                                     if partition[node] == com]
         row_indexes = np.array([int(np.where(tm_dict['users'] == user)[0]) for user in list_nodes]) 
-        print len(list_nodes) #get the size of the list of nodes
-        community_matrix[row_num, :] = tweets_matrix[row_indexes, :].sum(0)
+        print len(list_nodes) #get the community size
+        community_matrix[row_num, :] = tweets_matrix[row_indexes, :].sum(0)#/float(len(row_indexes))
         row_num += 1
     
-    #similaridade entre comunidades  
-    comsizes = np.bincount(partition.values())
-    for com in set(partition.values()):
-        toptweets = np.argsort(community_matrix[com,:])[::-1][:10]
-        if comsizes[com] > 10:
-            print "particao", com, comsizes[com]
-            for t in toptweets:
-                if community_matrix[com,t] > 0:
-                    print community_matrix[com, t]/comsizes[com], \
-                          sum(tweets_matrix[:,t])/float(tweets_matrix.shape[0]), \
-                          tm_dict['tweets_collection'][t][0]['text'][14:] 
-            print "\n"
+#    #similaridade entre comunidades  
+#    comsizes = np.bincount(partition.values())
+#    for com in set(partition.values()):
+#        toptweets = np.argsort(community_matrix[com,:])[::-1][:5]
+#        if comsizes[com] > 10:
+#            print "particao", com, comsizes[com]
+#            for t in toptweets:
+#                if community_matrix[com,t] > 0:
+#                    print community_matrix[com, t]/comsizes[com], \
+#                          sum(tweets_matrix[:,t])/float(tweets_matrix.shape[0]), \
+#                          tm_dict['tweets_collection'][t][0]['text'][14:] 
+#            print "\n"
             
     return community_matrix, partition
 
 
-TM_dict['TM_sparse_com']['tweets_matrix'], TM_dict['TM_sparse_com']['partitions'] = community_matrix(TM_dict['TM_sparse_prop'], G_sparse)
-TM_dict['TM_pop_com']['tweets_matrix'], TM_dict['TM_pop_com']['partitions']  = community_matrix(TM_dict['TM_pop_prop'], G_pop)
+TM_dict['TM_sparse_com']['tweets_matrix'], TM_dict['TM_sparse_com']['partitions'] = community_matrix(TM_dict['TM_sparse'], G_sparse)
+TM_dict['TM_pop_com']['tweets_matrix'], TM_dict['TM_pop_com']['partitions']  = community_matrix(TM_dict['TM_pop'], G_pop)
+
 
 
 #salva tudo
@@ -367,6 +369,22 @@ for i, tam in enumerate(tamanhos):
     print "random :", resultados[-1, i]/float(n)
     print   
 
+res_sparse = 100*resultados[keys.index('TM_sparse')]/float(n)
+res_random = 100*resultados[-1]/float(n)
+
+width = 0.35
+b1 = plt.bar(np.arange(len(tamanhos)), res_sparse, width, color='y')
+b2 = plt.bar(np.arange(len(tamanhos))+width, res_random, width, color='r')
+plt.xticks(np.arange(len(tamanhos))+width, tamanhos)
+plt.legend( (b1[0], b2[0]), ('KNN', 'null-model') )
+plt.ylabel("porcentagem de acertos")
+plt.xlabel("k")
+plt.title("Classificacao KNN")
+plt.ylim((0,50))
+
+
+
+
 
 ###############################################################################
 #regressao linear e SVM
@@ -374,9 +392,10 @@ from sklearn import svm
 
 def prepare_sets(tm_dict, split=0.5):
     
-    class_dict = {'cotidiano':1, 'esporte':2, 'mundo':3, 
-              'poder':4, 'ilustrada':5, 'mercado':6}    
+    class_dict = {'cotidiano':0, 'esporte':1, 'mundo':2, 
+              'poder':3, 'ilustrada':4, 'mercado':5}    
     Y = np.array([class_dict[classe] for classe in tm_dict['classes']])
+    Y.shape = (Y.size, 1) #create column vector
 #    Y_rand = list(Y)
 #    random.shuffle(Y_rand)
 #    Y_rand = np.array(Y_rand) #TODO: comparar com nulo
@@ -417,12 +436,12 @@ def svc(tm_dict):
     classificador.fit(X_train, Y_train)
     
     Y_class = classificador.predict(X_train)
-    acertos = sum(Y_train == Y_class) / float(len(Y_class))
+    acertos = sum(Y_train == Y_class) / float(Y_class.size)
     print "acertos treino:", acertos 
 
    
     Y_classificado = classificador.predict(X_test)
-    acertos = sum(Y_test == Y_classificado) / float(len(Y_classificado))
+    acertos = sum(Y_test == Y_classificado) / float(Y_classificado.size)
     print "acertos teste:", acertos
     
 
@@ -431,8 +450,83 @@ for (key,item) in TM_dict.iteritems():
     svc(item)
 
 
-#TODO: redes neurais
-#TODO: LDA
+
+###############################################################################
+#MLP
+
+#ver http://pybrain.org/docs/tutorial/fnn.html
+from pybrain.datasets            import ClassificationDataSet
+from pybrain.utilities           import percentError
+from pybrain.tools.shortcuts     import buildNetwork
+from pybrain.supervised.trainers import BackpropTrainer
+from pybrain.structure.modules   import SoftmaxLayer
+
+
+#means = [(-1,0),(2,4),(3,1)]
+#cov = [diag([1,1]), diag([0.5,1.2]), diag([1.5,0.7])]
+#alldata = ClassificationDataSet(2, 1, nb_classes=3)
+#for n in xrange(400):
+#    for klass in range(3):
+#        input = multivariate_normal(means[klass],cov[klass])
+#        alldata.addSample(input, [klass])
+#
+#tstdata,trndata = alldata.splitWithProportion( 0.25 )        
+
+(X_train, Y_train, X_test, Y_test) = prepare_sets(TM_dict['TM_sparse'], split=1.0)
+class_dict = {'cotidiano':0, 'esporte':1, 'mundo':2, 
+              'poder':3, 'ilustrada':4, 'mercado':5}
+ord_labels = ['cotidiano', 'esporte', 'mundo', 'poder', 'ilustrada', 'mercado']
+              
+DS =  ClassificationDataSet(inp=X_train.shape[1], nb_classes=len(class_dict), class_labels=ord_labels)
+assert(X_train.shape[0] == Y_train.shape[0])
+DS.setField('input', X_train)
+DS.setField('target', Y_train)
+
+tstdata,trndata = DS.splitWithProportion( 0.25 )
+
+trndata._convertToOneOfMany()
+tstdata._convertToOneOfMany()
+
+print "Number of training patterns: ", len(trndata)
+print "Input and output dimensions: ", trndata.indim, trndata.outdim
+print "First sample (input, target, class):"
+print trndata['input'][0], trndata['target'][0], trndata['class'][0]
+
+nneuronios = 10
+fnn = buildNetwork( trndata.indim, nneuronios, trndata.outdim, outclass=SoftmaxLayer )
+trainer = BackpropTrainer( fnn, dataset=trndata, momentum=0.1, verbose=True, weightdecay=0.01)
+
+
+epochs = []
+trn_errors = []
+tst_errors = []
+best_result = 100
+for _ in range(40):
+    trainer.trainEpochs(5)
+    trnresult = percentError( trainer.testOnClassData(),
+                              trndata['class'] )
+    tstresult = percentError( trainer.testOnClassData(
+           dataset=tstdata ), tstdata['class'] )
+
+    print "epoch: %4d" % trainer.totalepochs, \
+          "  train error: %5.2f%%" % trnresult, \
+          "  test error: %5.2f%%" % tstresult
+          
+    if tstresult < best_result:
+        best_result = tstresult
+        print "best"
+
+    epochs.append(trainer.totalepochs)
+    trn_errors.append(100-trnresult)
+    tst_errors.append(100-tstresult)    
+    
+    
+plt.plot(epochs, trn_errors, epochs, tst_errors)
+plt.xlabel('Epocas')
+plt.ylabel('Acertos (%)') 
+plt.legend(("Treinamento","Validacao"))
+plt.title("Rede Neural MLP, %s neuronios, 1 camada escondida" %nneuronios )
+   
 
 
 
@@ -444,7 +538,8 @@ from kurkameans import kmeans
 
 ncluster = 20
 
-for key in TM_dict.keys():  
+#for key in TM_dict.keys():  
+for key in ["TM_sparse"]:
     print key
     X = TM_dict[key]['tweets_matrix'].T
   
@@ -453,15 +548,18 @@ for key in TM_dict.keys():
 
    
    
-tweets_collection = TM_dict[key]['tweets_collection']   
-#####
-#imprime clusters
-cols = []
-for j in range(ncluster):
-    for i in np.where(xtoc == j)[0]:
-        print classes[i], "\t", tweets_collection[i][0]['text'][14:] 
-        cols.append(i)
-    print "\n\n"
+    tweets_collection = TM_dict[key]['tweets_collection']   
+    #####
+    #imprime clusters
+    cols = []
+    for j in range(ncluster):
+        members = np.where(xtoc == j)[0]
+        if len(members) >= 5 and len(members) <= 10: #optional limit
+            for i in np.where(xtoc == j)[0]:
+                #print classes[i], "\t", tweets_collection[i][0]['text'][14:]
+                print tweets_collection[i][0]['text'][15:], "\\\\"
+                cols.append(i)
+            print "\n\n"
 
 
 #plt.matshow(X, cmap=plt.cm.Blues)
@@ -482,12 +580,17 @@ class_dict = {'cotidiano':1, 'esporte':2, 'mundo':3,
 y = np.array([class_dict[classe] for classe in TM_dict['TM_sparse']['classes']])
 
 
-pca = PCA(n_components=2)
+pca = PCA()#n_components)
 pca.fit(X)
-X = pca.transform(X)
+X2 = pca.transform(X)
 
 
-plt.scatter(X[:,0], X[:,1], c=y)
+X2 = np.delete(X2, 178, axis=0)
+y = np.delete(y, 178)
+X2 = np.delete(X2, 134, axis=0)
+y = np.delete(y, 134)
+
+plt.scatter(X2[:,0], X2[:,1], c=y)
 
         
 ###############################################################################
@@ -599,7 +702,6 @@ for cat in class_dict.keys():
     
 
 #TODO: comparar com grupos aleatorios
-#TODO: PCA
 
 ###############################################################################
 #topicos diferentes por usuario
@@ -616,42 +718,212 @@ for usr in TM_dict['TM_sparse']['tweets_matrix'][topusers]:
     print len(usr_topics), usr_topics
     bcount.append(len(usr_topics))
     
-np.bincount(bcount)
+distr = 100*np.bincount(bcount)/float(topusers.size)
+bars = distr[1:]
 
+plt.bar(np.arange(len(bars)), bars, align='center')
+plt.xticks(np.arange(6), ['1','2','3','4','5','6'])
+plt.ylabel("porcentagem dos usuarios")
+plt.xlabel("numero de categorias compartilhadas")
+plt.title("Quantidade de topicos compartilhados por usuario")
+
+###############################################################################
+#histogramas
+
+#tweets por usuario
+twpusr = np.sum(TM_dict['TM_sparse']['tweets_matrix'], axis=1)
+plt.hist(np.sort(twpusr), bins=np.sort(twpusr)[-1], log=True)
+plt.ylabel('Frequencia (log)')
+plt.xlabel('Compartilhamentos por usuario')
+plt.title("Histograma: retweets por usuario")
+
+
+
+#log-log
+bins = np.arange(0, 2.1, 0.2)
+plt.xticks(bins, ["%.0f" %10**i if i % .5 == 0 else '' for i in bins])
+plt.hist(np.log10(twpusr), log=True, bins=bins)
+plt.ylabel('Frequencia (log)')
+plt.xlabel('Compartilhamentos por usuario (log)')
+plt.title("Histograma: retweets por usuario (logXlog)")
+
+
+#retweets por mensagem
+rtpmsg = np.sum(TM_dict['TM_sparse']['tweets_matrix'], axis=0)
+plt.hist(np.sort(rtpmsg), bins=np.sort(rtpmsg)[-1], log=True)
+plt.ylabel('Frequencia (log)')
+plt.xlabel('Compartilhamentos por mensagem')
+plt.title("Histograma: retweets por mensagem")
+
+bins = np.arange(1, 3.1, 0.1)
+plt.xticks(bins, ["%.0f" %10**i if round(10**i) in [10, 20, 30, 50, 100, 200, 300, 1000] else '' for i in bins])
+#plt.xticks(bins, ["%.0f" %10**i if np.round(10**i)% 10 == 0 else '' for i in bins])
+#plt.xticks(bins, ["%.0f" %10**i for i in bins])
+plt.hist(np.log10(rtpmsg), log=True, bins=bins)
+plt.ylabel('Frequencia (log)')
+plt.xlabel('Compartilhamentos por mensagem (log)')
+plt.title("Histograma: retweets por mensagem (logXlog)")
     
 ###############################################################################
 #frequencia dentro de comunidades
-    
+
 for tm_dict in [TM_dict['TM_sparse_com']]:
     
     community_matrix = tm_dict['tweets_matrix']
     partition = tm_dict['partitions']
     tweets_matrix = TM_dict['TM_sparse']['tweets_matrix']
     
+    comorder = []
+    comorder2 = []
+    
     #similaridade entre comunidades  
     comsizes = np.bincount(partition.values())
-    for com in set(partition.values()):
-        toptweets = np.argsort(community_matrix[com,:])[::-1][:3]
-        if comsizes[com] > 100:
+    for com in printorder:#set(partition.values()): #printorder:
+        difftweets = np.absolute(community_matrix[com, :]/float(comsizes[com]) - \
+                    (tweets_matrix.sum(0)-community_matrix[com, :])/float(tweets_matrix.shape[0]-comsizes[com]) )
+        
+        topdifftweets = np.argsort(difftweets)[::-1][:5]
+        
+        if comsizes[com] >= 50:#> 50 and comsizes[com] <= 100:
+            comorder.append(sum(difftweets))
+            comorder2.append(com)
             print "\multicolumn{3}{l}{Comunidade %d, membros: %d, total tweets: %d} \\\\\n"\
                     % (com, comsizes[com], sum(community_matrix[com,:]))
-            for t in toptweets:
-                if community_matrix[com,t] > 0:
-                    print "%2.1f\\%% & %2.1f\\%% & %s...\\\\\n"\
-                          %(100*community_matrix[com, t]/comsizes[com], \
-                          100*sum(tweets_matrix[:,t])/float(tweets_matrix.shape[0]), \
-                          #100*community_matrix[com, t]/float(sum(tweets_matrix[:,t])), \
-                          tm_dict['tweets_collection'][t][0]['text'][14:70]) 
+            for t in topdifftweets:
+                #if community_matrix[com,t] > 0:
+                print "%2.1f\\%% & %2.1f\\%% & %s...\\\\\n"\
+                      %(100*community_matrix[com, t]/comsizes[com], \
+                      100*(sum(tweets_matrix[:,t])-community_matrix[com, t])/float(tweets_matrix.shape[0]-comsizes[com]), \
+                      #100*community_matrix[com, t]/float(sum(tweets_matrix[:,t])), \
+                      tm_dict['tweets_collection'][t][0]['text'][14:80]) 
                           
             print "\hline\n"
+            
+    ordercom = np.argsort(comorder)[::-1]
+    printorder = np.array(comorder2)[ordercom]
+
+
+#bar charts dos topicos por comunidade
+for tm_dict in [TM_dict['TM_sparse_com']]:
+    
+    community_matrix = tm_dict['tweets_matrix']
+    partition = tm_dict['partitions']
+    tweets_matrix = TM_dict['TM_sparse']['tweets_matrix']
+
+    #ordercom = np.argsort(comorder)[::-1]
+    #printorder = np.array(comorder2)[ordercom]
+    #printorder = [17, 28,  1, 11, 13, 24,  8, 33,  3, 10,  6,  5,  7,  4,  2,  0]
+
+    class_dict = {'cotidiano':0, 'esporte':1, 'mundo':2, 
+              'poder':3, 'ilustrada':4, 'mercado':5} 
+            
+    for num, com in [(0,24)]:#enumerate(printorder):#[:5]):
+        bars = np.array([0,0,0,0,0,0])
+        for cel_pos, cel_val in enumerate(community_matrix[com,:]):
+            classe = class_dict[tm_dict['classes'][cel_pos]]
+            bars[classe] += cel_val
+        bars = (bars / float(sum(community_matrix[com,:])))*100
+        print com
+        print bars
+        
+        plt.subplot(1,2,num+1)
+        plt.bar(np.arange(len(bars)), bars, align='center', color=['b','g','r','c','m','y'], label=class_dict.keys())
+        plt.xticks(np.arange(6), class_dict.keys(), rotation=90)
+        plt.ylabel("porcentagem")
+        plt.title("Distribuicao Topicos Comunidade %s" %com)
+        #plt.savefig("bar%s" %num)
+        #plt.close()
+   
+        
+    #geral
+    num_classes = []
+    bars = np.array([0,0,0,0,0,0])
+    for cel_pos, cel_val in enumerate(np.sum(TM_dict['TM_sparse']['tweets_matrix'], axis=0)):
+        classe = class_dict[TM_dict['TM_sparse']['classes'][cel_pos]]
+        bars[classe] += cel_val
+    bars = (bars / float(sum(TM_dict['TM_sparse']['tweets_matrix'])))*100
+    print com
+    print bars
+    plt.subplot(1,2,2)
+    plt.bar(np.arange(len(bars)), bars, align='center', color=['b','g','r','c','m','y'], label=class_dict.keys())
+    plt.xticks(np.arange(6), class_dict.keys(), rotation=90)
+    plt.ylabel("porcentagem")
+    plt.title("Distribuicao Topicos Geral")
+    plt.savefig("bargeral")
+    plt.tight_layout()
+
+    
+
+
+###############################################################################
+#análise de grafos
+import networkx as nx
+
+in_degrees = G_sparse.in_degree() # dictionary node:degree
+in_values = sorted(set(in_degrees.values())) 
+in_hist = [in_degrees.values().count(x) for x in in_values]
+
+out_degrees = G_sparse.out_degree() # dictionary node:degree
+out_values = sorted(set(out_degrees.values())) 
+out_hist = [out_degrees.values().count(x) for x in out_values]
+
+plt.figure()
+plt.plot(in_values,in_hist,'ro') # in-degree
+plt.plot(out_values,out_hist,'bv') # out-degree
+plt.yscale('log')
+plt.xscale('log')
+plt.legend(['In-degree','Out-degree'])
+plt.xlabel('Grau (log)')
+plt.ylabel('Numero de nos (log)')
+plt.title('Rede de conexoes entre usuarios')
+plt.savefig('graphinouthist.pdf')
+plt.show()
+plt.close()
+
+
+
+G_sparse_components = nx.connected_component_subgraphs(G_sparse.to_undirected())
+
+# Betweenness centrality
+bet_cen = nx.betweenness_centrality(G_sparse)
+# Closeness centrality
+clo_cen = nx.closeness_centrality(G_sparse)
+# Eigenvector centrality
+eig_cen = nx.eigenvector_centrality(G_sparse)
+ 
+
+
+#### powerlaw analysis
+import powerlaw
+data = out_hist # data can be list or numpy array
+results = powerlaw.Fit(data, discrete=True)
+print results.power_law.alpha
+print results.power_law.xmin
+print results.power_law.xmax
+for alt in ['exponential', 'lognormal', 'stretched_exponential']:
+    R, p = results.distribution_compare('truncated_power_law', alt)
+    print alt, R, p
+
+
+
+
+
+fit = powerlaw.Fit(data, discrete=True)
+####
+figCCDF = fit.plot_pdf(color='b', linewidth=2)
+fit.power_law.plot_pdf(color='b', linestyle='--')
+####
+figCCDF.set_ylabel(r"$p(X)$,  $p(X\geq x)$")
+figCCDF.set_xlabel(r"Word Frequency")
+savefig('FigCCDF.eps', bbox_inches='tight')
+
+
+
+
 
 #TODO:
 #LDA?
-#redes neurais
 
-
-\multicolumn{4}{l}{Comunidade 1, tamanho: 10, tweets: 20} \\
-35 & 54 & 40 & Neymar pode ser preso se mostrar a cueca com
 
 
 
