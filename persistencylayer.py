@@ -7,8 +7,8 @@ import random
 #TODO: consertar identacao!!
 
 class TweetsPersister():
-   def __init__(self):
-      json_fp = open('credentials.json')
+   def __init__(self, cred='credentials.json'):
+      json_fp = open(cred)
       self.cred = json.load(json_fp)
       self.connect()
       filterwarnings('ignore', category = MySQLdb.Warning)

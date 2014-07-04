@@ -524,7 +524,7 @@ for _ in range(40):
 plt.plot(epochs, trn_errors, epochs, tst_errors)
 plt.xlabel('Epocas')
 plt.ylabel('Acertos (%)') 
-plt.legend(("Treinamento","Validacao"))
+plt.legend(("Treinamento","Teste"))
 plt.title("Rede Neural MLP, %s neuronios, 1 camada escondida" %nneuronios )
    
 
@@ -601,49 +601,97 @@ import os
 
 #inclose
 
+def inclose(tmatrix, minrow, mincol):
+    #Roda inclose usando octave
+    sio.savemat('matlab/twitter.mat', {'tweets_matrix':tmatrix, 'minrow':minrow, 'mincol':mincol})
+    os.chdir("matlab")
+    os.system("octave twitter-inclose.m")
+    os.chdir("..")
+    os.system("cd ..")
+    mat_contents = sio.loadmat('matlab/bicl.mat')
+    biclusters = mat_contents['biclusters'][0]
+    return biclusters
+
+    
+
+tmkeys = ['TM_sparse', 'TM_pop']#TM_dict.keys()
+
+biclusters = {}
+for k in tmkeys:
+    biclusters[k] = inclose(TM_dict[k]['tweets_matrix'], 3, 3)
+
+
+#imprime mensagem e topicos dos biclusters
+for k in tmkeys:
+    print k
+    for n, bic in enumerate(biclusters[k]):
+        print "bic %s" %n
+        bic_msgs = bic['B'][0]-1
+        for msg in bic_msgs:
+            print TM_dict[k]['classes'][msg], "\t", TM_dict[k]['tweets_collection'][msg][0]['text'][14:]
+        print "\n"
+        
+#verifica correlacao entre bicluster e grupos
 TM_dict['TM_pop']['partitions'] = TM_dict['TM_pop_com']['partitions']
 TM_dict['TM_sparse']['partitions'] = TM_dict['TM_sparse_com']['partitions']
 
-#for tm_dict in [TM_dict['TM_sparse'], TM_dict['TM_pop']]:
-for tm_dict in [TM_dict['TM_pop']]:
+for key in ['TM_pop']:
     #1-roda inclose usando octave
-    sio.savemat('matlab/twitter.mat', {'tweets_matrix':tm_dict['tweets_matrix']})
-    print "executando inclose. Isso pode demorar um pouco"
-    os.system("octave twitter-inclose.m")
-    mat_contents = sio.loadmat('matlab/bicl.mat')
-    biclusters = mat_contents['biclusters'][0]
-    
-    
-    #2 imprime biclusters encontrados
-    tweets_collection = tm_dict['tweets_collection']
-    classes = tm_dict['classes']
+    bicluster = biclusters[key]
 
-    #3 encontra comunidades que os elementos do bicluster fazem parte
+ 
+        
     community_users = {}
-    for com in set(tm_dict['partitions'].values()):
-        list_nodes = [node for node in tm_dict['partitions'].keys()
-                                    if tm_dict['partitions'][node] == com]
-        row_indexes = np.array([int(np.where(tm_dict['users'] == user)[0]) for user in list_nodes]) 
+    for com in set(TM_dict[key]['partitions'].values()):
+        list_nodes = [node for node in TM_dict[key]['partitions'].keys()
+                                    if TM_dict[key]['partitions'][node] == com]
+        row_indexes = np.array([int(np.where(TM_dict[key]['users'] == user)[0]) for user in list_nodes]) 
+        print len(row_indexes)
         community_users[com] = row_indexes
 
-
+    #3 encontra comunidades que os elementos do bicluster fazem parte 
     bic2com = []
-    for bic in biclusters:
-        bic_users = bic['B'][0]
+    for bic in bicluster:
+        bic_users = bic['A'][0]-1
         nearest_com = -1
         biggest_similarity = 0
         #find community that contains most of the bicluster's users
-        for com in set(tm_dict['partitions'].values()):
+        for com in set(TM_dict[key]['partitions'].values()):
             similars = len(set(bic_users) & set(community_users[com]))
             if similars > biggest_similarity:
                 nearest_com = com
                 biggest_similarity = similars
         print "bic size:", len(bic_users), "/ com size:", len(community_users[nearest_com]),\
-              "/ in common:", biggest_similarity
+              "/ in common:", biggest_similarity, "/ percentage:", 100*biggest_similarity/float(len(bic_users))
                 
         bic2com.append(nearest_com)
+
+#verifica se existem ligacoes entre usuarios de um mesmo bicluster    
+TM_dict['TM_pop']['graph'] = G_pop
+TM_dict['TM_sparse']['graph'] = G_sparse
+
+
+
+from itertools import combinations
+def check_connectivity(G, nodes_list):
+    n_nodes = len(nodes_list)
+    n_combinations = ((n_nodes-1)*n_nodes)/2
     
-    print bic2com
+    n_edges = 0
+    for u,v in combinations(nodes_list, 2):
+        if G.has_edge(u,v) or G.has_edge(v,u):
+            n_edges += 1
+    return 100*n_edges / float(n_combinations)
+
+
+  
+for key in ['TM_pop']:    
+    bic2com = []
+    for bic in biclusters[key]:
+        bic_users = bic['A'][0]-1
+        connectivity = check_connectivity(TM_dict[key]['graph'], TM_dict[key]['users'][bic_users.astype(int)])
+        print "bic size:", len(bic_users), "/ connectivity:", connectivity
+        
             
         
 #    for bic in biclusters:
@@ -872,7 +920,7 @@ plt.plot(in_values,in_hist,'ro') # in-degree
 plt.plot(out_values,out_hist,'bv') # out-degree
 plt.yscale('log')
 plt.xscale('log')
-plt.legend(['In-degree','Out-degree'])
+plt.legend(['Seguidores','Seguidos'])
 plt.xlabel('Grau (log)')
 plt.ylabel('Numero de nos (log)')
 plt.title('Rede de conexoes entre usuarios')
@@ -884,18 +932,25 @@ plt.close()
 
 G_sparse_components = nx.connected_component_subgraphs(G_sparse.to_undirected())
 
+
+
 # Betweenness centrality
 bet_cen = nx.betweenness_centrality(G_sparse)
 # Closeness centrality
 clo_cen = nx.closeness_centrality(G_sparse)
 # Eigenvector centrality
 eig_cen = nx.eigenvector_centrality(G_sparse)
- 
+#  Average clustering
+avg_clus = nx.average_clustering(G_sparse.to_undirected()) 
+# Average clustering of random network:
+m = len(G_sparse.to_undirected().edges())
+n = len(G_sparse.nodes())
+avg_clus_rand = float(m)/(n*(n-1)/2.)
 
 
 #### powerlaw analysis
 import powerlaw
-data = out_hist # data can be list or numpy array
+data = in_hist # data can be list or numpy array
 results = powerlaw.Fit(data, discrete=True)
 print results.power_law.alpha
 print results.power_law.xmin
@@ -905,19 +960,19 @@ for alt in ['exponential', 'lognormal', 'stretched_exponential']:
     print alt, R, p
 
 
+#test tweets per user function
+twpusr = np.sum(TM_dict['TM_sparse']['tweets_matrix'], axis=1)
+tw_values = sorted(set(twpusr)) 
+tw_hist = [in_degrees.values().count(x) for x in in_values]
 
-
-
-fit = powerlaw.Fit(data, discrete=True)
-####
-figCCDF = fit.plot_pdf(color='b', linewidth=2)
-fit.power_law.plot_pdf(color='b', linestyle='--')
-####
-figCCDF.set_ylabel(r"$p(X)$,  $p(X\geq x)$")
-figCCDF.set_xlabel(r"Word Frequency")
-savefig('FigCCDF.eps', bbox_inches='tight')
-
-
+data = tw_hist # data can be list or numpy array
+results = powerlaw.Fit(data, discrete=True)
+print results.power_law.alpha
+print results.power_law.xmin
+print results.power_law.xmax
+for alt in ['exponential', 'lognormal', 'stretched_exponential']:
+    R, p = results.distribution_compare('truncated_power_law', alt)
+    print alt, R, p
 
 
 

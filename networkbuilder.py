@@ -1,115 +1,247 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sat Dec 14 13:36:10 2013
 
-@author: kurka
-"""
+
+
+
+###1-pega novo usuario
+#pega topo da fila
+#confere se ja nao foi visitado
+
+
+
+#pega lista de seguidores
+
+#adiciona na fila
+#guarda arquivo
+
+
 
 import tweepy
 import time
 import json
+import sys
 from persistencylayer import TweetsPersister
 
-FOLHA = '14594813'
-ESTADAO = '9317502'
-UOLNOT = '14594698'
-G1 = '8802752'
-R7 = '65473559'
-SOURCE_IDS = [int(FOLHA), int(ESTADAO), int(UOLNOT), int(G1), int(R7)]
+
+class NetworkBuilder():
+    def __init__(self, credentials, mode, direction):
+        FOLHA = '14594813'
+        ESTADAO = '9317502'
+        UOLNOT = '14594698'
+        G1 = '8802752'
+        R7 = '65473559'
+        self.source_ids = [int(FOLHA), int(ESTADAO), int(UOLNOT), int(G1), int(R7)]
+        self.direction = direction
+        self.mode = mode
+
+        self.persister = TweetsPersister(credentials) #connect to database    
+
+        #get apps info, used to retrieve information
+
+        json_fp = open(credentials, 'r')
+        cred = json.load(json_fp)
+        #get credentials, to connect with Twitter API
+        self.apps = cred['twitter_apps']
+          
+        n_apps = len(self.apps)
+
+        self.apps_resources = [0] * n_apps  #number of requisitions left
+        self.apps_timeout = [0] * n_apps    #time where requisitions will be restored
+        
+        for app in range(n_apps):
+            self.connect(app)               #connect once in all apps, to get right info
+
+        self.current_app = 0                #app currently connected to API
+        
+          
+        self.connect(self.current_app) #connect to first app of the list
+        self.api_waiter()
+        self.buildnetwork(self.mode, self.direction)
+            
+      
+      
+      
 
 
-
-def api_waiter(wait_anyway=True):
-    """Handles with api rating limits"""
-
-    rl = api.rate_limit_status()
-    remaining_resources = rl['resources']['followers']['/followers/ids']['remaining']
+    def connect(self, app_id=0):
+        """connect to Twitter API and to database"""        
     
-    #check if there is still resources
-    if remaining_resources > 0:
-        if wait_anyway:
-            time.sleep(60) #wait for 60 seconds, before using it again
-        else:
-            return #just try again
+        #OAuth autentication with Twitter API
+        auth = tweepy.OAuthHandler(self.apps[app_id]['consumer_key'], self.apps[app_id]['consumer_secret'])
+        auth.set_access_token(self.apps[app_id]['access_token'], self.apps[app_id]['access_token_secret'])
     
-    else:
-        while remaining_resources == 0:
-            time_to_reset = rl['resources']['followers']['/followers/ids']['reset']-int(time.time())+2 
-            print "dormindo por %s segundos esperando o reset" % time_to_reset
-            if time_to_reset > 0:
-                time.sleep(time_to_reset)
+        self.api = tweepy.API(auth)
+        self.current_app = app_id
+    
+        #show the resources available
+        rl = self.api.rate_limit_status()
+        info = rl['resources'][self.direction]['/'+self.direction+'/ids']
+        print "current app: %d" %self.current_app        
+        print "remaining: %d" %info['remaining']
+        print "reset time: %s" %time.ctime(info['reset'])
+        self.apps_resources[app_id] = info['remaining']
+        self.apps_timeout[app_id] = info['reset']
+
+
+        
+    def api_waiter(self, wait_anyway=False):
+        """Handles with api rating limits"""
+    
+        rl = self.api.rate_limit_status()
+        info = rl['resources'][self.direction]['/'+self.direction+'/ids']
+        remaining_resources = info['remaining']
+        self.apps_resources[self.current_app] = remaining_resources
+        self.apps_timeout[self.current_app] = info['reset']
+        
+        #check if there is still resources
+        if remaining_resources > 0:
+            if wait_anyway:
+                time.sleep(60) #wait for 60 seconds, before using it again
             else:
-                time.sleep(5) #sleep at least 5 seconds
-    
-            #update rate limits        
-            rl = api.rate_limit_status()
-            remaining_resources = rl['resources']['followers']['/followers/ids']['remaining']
-
-
-
-#get credentials, to connect with Twitter API
-json_fp = open('credentials.json')
-cred = json.load(json_fp)
-
-#OAuth autentication with Twitter API
-auth = tweepy.OAuthHandler(cred['twitter']['consumer_key'], cred['twitter']['consumer_secret'])
-auth.set_access_token(cred['twitter']['access_token'], cred['twitter']['access_token_secret'])
-
-api = tweepy.API(auth)
-
-#show the resources available
-rl = api.rate_limit_status()
-print(rl['resources']['followers']['/followers/ids'])
-api_waiter(False)
-persister = TweetsPersister() #connect to database
-    
-
-while True:
-    #try to get new user
-    new_user = persister.loadUnprocessedRecurrentUser() #try to get recurrent users first
-    if not new_user:
-        new_user = persister.loadUnprocessedUser()
+                return #just try again
         
-    if new_user and new_user not in SOURCE_IDS:
-        print 'building network for user %s' % new_user
-                
-        #1 check if user is related to source
-#            relation = api.show_friendship(source_id=SOURCE_ID, target_id=new_user)
-#            if relation[1].following == True:
-#                persister.saveFollower(new_user)
+        elif remaining_resources == 0:
+            #try to change the app 1
+            for app_id, remaining in enumerate(self.apps_resources):
+                if remaining > 0:
+                    self.connect(app_id)
+                    self.api_waiter()
+                    return
+
+            #try to change the app 2            
+            #if there isn't any app with resources, choose the closer to reset and wait
+            oldest_app = self.apps_timeout.index(min(self.apps_timeout))
+            if oldest_app != self.current_app:
+                self.connect(oldest_app)
+                self.api_waiter()
+                return
+            
+            elif oldest_app == self.current_app:
+                while remaining_resources == 0:
+                    time_to_reset = rl['resources'][self.direction]['/'+self.direction+'/ids']['reset']-int(time.time())+1 
+                    print "dormindo por %s segundos esperando o reset" % time_to_reset
+                    if time_to_reset > 0:
+                        time.sleep(time_to_reset)
+                    else:
+                        time.sleep(5) #sleep at least 5 seconds
+            
+                    #update rate limits        
+                    rl = self.api.rate_limit_status()
+                    remaining_resources = rl['resources'][self.direction]['/'+self.direction+'/ids']['remaining']
+                    self.apps_resources[self.current_app] = remaining_resources
+                    self.apps_timeout[self.current_app] = rl['resources'][self.direction]['/'+self.direction+'/ids']['reset']
+                         
+            return
+    
+    
+    
+    def buildnetwork(self, mode, direction): #active or queue
+        """Get users connections in order to build a graph of relationships
         
-        #2 get user's followers
-        followers = []
-        try:
-            for follower in tweepy.Cursor(api.followers_ids, id=new_user).pages():
-                followers += follower
-                print len(followers), "followers"
+        Args:
+            mode: 'active' - build connections of users that twitted in the past, and already are in database
+                  'queue' - do a breadth-first search in the network, starting from the root users
+            direction: 'followers' - get users followers (out edges)
+                       'friends' - get users friends (in edges)
+    
+        """
+    
+        if direction == 'followers':
+            request = "self.api.followers_ids"                     
+        elif direction == 'friends':
+            request = "self.api.friends_ids"
+
+    
+        while True:
+            if mode=='active': #get new users from database
+                new_user = self.persister.loadUnprocessedUser(direction, origin=mode)
+            elif mode=='queue': #get new users from queue
+                #try first to get unprocessed users from Users database
+                new_user = self.persister.loadUnprocessedUser(direction, origin=mode)
+                if not new_user:
+                    #try to find suitable user in the queue
+                    new_user = self.persister.popQueueUser() 
+                    
+                    #look for users not already in database
+                    while new_user and self.persister.findUser(new_user):
+                        new_user = self.persister.popQueueUser()
+                    
+                    if new_user:
+                        #insert user in database
+                        try:
+                            userobject = self.api.get_user(new_user)
+                            self.persister.insertUserObject(userobject, origin=2)
+                        except (tweepy.TweepError), e:
+                            print e
+                            continue
+                    
+                                 
+                            
                 
-                #wait to do more requests
-                api_waiter()
-
-            #salva lista em arquivo
-            f = open("net/"+str(new_user), "w")
-            json.dump(followers, f)
-            f.close()
-            #registra no banco de dados que usuario ja foi processado
-            persister.saveProcessedUser(new_user)
-        except (tweepy.TweepError), e:
-            print(e)
-            persister.saveProcessedUser(new_user, 7) #TODO: TEMP! 
-            api_waiter()
-            continue
-            #TODO: treat specially lack of resources error
-
-    elif new_user in SOURCE_IDS:
-        persister.saveProcessedUser(new_user, 3)
-    else:
-        print ">>>Network Builder desocupado!"
-        time.sleep(10)
-
             
-            
-            
-            
+            if new_user:                        
+                print 'building network for user %s' % new_user
+                
+                #get user's connections
+                connections = []
+                try:
+                    for userlist in tweepy.Cursor(eval(request), id=new_user).pages():
+                        connections += userlist
+                        print len(connections), "connections"
+                        
+                        #wait if needed to do more requests
+                        self.api_waiter()
+        
+        
+                    #save follower list in file
+                    if direction == 'followers':
+                        f = open("net/"+str(new_user), "w")
+                    elif direction == 'friends':
+                        f = open("netr/"+str(new_user), "w")
+                    json.dump(connections, f)
+                    f.close()
+                    
+                    
+                    
+                    #register in database that user was processed
+                    self.persister.saveProcessedUser(new_user, direction)  
 
+                    
+                    if self.persister.isUserProcessed(new_user): #check if everything was collected already (friends & followers)                
+                        f = open('net/'+str(new_user))
+                        followers = set(json.load(f))
+                        f.close()
+                        
+                        f = open('netr/'+str(new_user))
+                        friends = set(json.load(f))
+                        f.close()                        
+                        
+                        true_friends = list(followers & friends)
+                        
+                        self.persister.pushQueueUsers(true_friends)
+                        
+                    
+                except (tweepy.TweepError), e:
+                    print(e)
+                    self.persister.saveProcessedUser(new_user, error=True) 
+                    self.api_waiter()
+                    continue
+                    #TODO: treat specially lack of resources error
+        
+            else:
+                print ">>>Network Builder desocupado!"
+                time.sleep(10)
+        
+        
+def main(argv):
+    
+    #import cProfile
+    #cProfile.run("program(sys.argv)", "test.profile")
+    if len(argv) != 4:
+        print "Usage: python networkbuilder.py [credentials_file] [active|queue] [followers|friends]"
+        return
+    
+    NetworkBuilder(argv[1], mode=argv[2], direction=argv[3])    
 
+if __name__ == "__main__":
+    main(sys.argv)
