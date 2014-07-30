@@ -2,26 +2,12 @@
 
 
 
-
-###1-pega novo usuario
-#pega topo da fila
-#confere se ja nao foi visitado
-
-
-
-#pega lista de seguidores
-
-#adiciona na fila
-#guarda arquivo
-
-
-
 import tweepy
 import time
 import json
 import sys
 from persistencylayer import TweetsPersister
-
+from pymongo import MongoClient
 
 class NetworkBuilder():
     def __init__(self, credentials, mode, direction):
@@ -34,12 +20,15 @@ class NetworkBuilder():
         self.direction = direction
         self.mode = mode
 
-        self.persister = TweetsPersister(credentials) #connect to database    
-
-        #get apps info, used to retrieve information
+        self.persister = TweetsPersister(credentials) #connect to mysql database
 
         json_fp = open(credentials, 'r')
         cred = json.load(json_fp)
+
+        #connect to mongodb database        
+        #self.relationsdb = MongoClient(cred['mongo']['host'], cred['mongo']['port']).twitter
+        
+
         #get credentials, to connect with Twitter API
         self.apps = cred['twitter_apps']
           
@@ -72,6 +61,7 @@ class NetworkBuilder():
     
         self.api = tweepy.API(auth)
         self.current_app = app_id
+
     
         #show the resources available
         rl = self.api.rate_limit_status()
@@ -84,7 +74,7 @@ class NetworkBuilder():
 
 
         
-    def api_waiter(self, wait_anyway=False):
+    def api_waiter(self, wait_anyway=True):
         """Handles with api rating limits"""
     
         rl = self.api.rate_limit_status()
@@ -96,7 +86,8 @@ class NetworkBuilder():
         #check if there is still resources
         if remaining_resources > 0:
             if wait_anyway:
-                time.sleep(60) #wait for 60 seconds, before using it again
+                time.sleep(3)
+                return
             else:
                 return #just try again
         
@@ -131,7 +122,7 @@ class NetworkBuilder():
                     self.apps_resources[self.current_app] = remaining_resources
                     self.apps_timeout[self.current_app] = rl['resources'][self.direction]['/'+self.direction+'/ids']['reset']
                          
-            return
+        return
     
     
     
@@ -147,9 +138,9 @@ class NetworkBuilder():
         """
     
         if direction == 'followers':
-            request = "self.api.followers_ids"                     
+            request = self.api.followers_ids                     
         elif direction == 'friends':
-            request = "self.api.friends_ids"
+            request = self.api.friends_ids
 
     
         while True:
@@ -182,15 +173,29 @@ class NetworkBuilder():
             if new_user:                        
                 print 'building network for user %s' % new_user
                 
+                #TODO: update user info
+                
                 #get user's connections
                 connections = []
                 try:
-                    for userlist in tweepy.Cursor(eval(request), id=new_user).pages():
-                        connections += userlist
-                        print len(connections), "connections"
+                    next_cursor=-1
+                    while(next_cursor!=0):
+                        #request = eval(request_cmd) #evaluate everytime, in case app has changed
+                        ids, (_, next_cursor) = request(id=new_user, cursor=next_cursor)
                         
-                        #wait if needed to do more requests
+                        connections += ids
+                        print len(connections), "connections"
+
+                        #wait if needed to do more requests                        
                         self.api_waiter()
+                        
+                        #update request object, case api has changed
+                        if direction == 'followers':
+                            request = self.api.followers_ids                     
+                        elif direction == 'friends':
+                            request = self.api.friends_ids
+                    
+
         
         
                     #save follower list in file
@@ -207,23 +212,28 @@ class NetworkBuilder():
                     self.persister.saveProcessedUser(new_user, direction)  
 
                     
-                    if self.persister.isUserProcessed(new_user): #check if everything was collected already (friends & followers)                
-                        f = open('net/'+str(new_user))
-                        followers = set(json.load(f))
-                        f.close()
-                        
-                        f = open('netr/'+str(new_user))
-                        friends = set(json.load(f))
-                        f.close()                        
-                        
-                        true_friends = list(followers & friends)
-                        
-                        self.persister.pushQueueUsers(true_friends)
+#                    if self.persister.isUserProcessed(new_user): #check if everything was collected already (friends & followers)                
+#                        f = open('net/'+str(new_user))
+#                        followers = set(json.load(f))
+#                        f.close()
+#                        
+#                        f = open('netr/'+str(new_user))
+#                        friends = set(json.load(f))
+#                        f.close()                        
+#                        
+#                        true_friends = list(followers & friends)
+#                        
+#                        self.persister.pushQueueUsers(true_friends)
                         
                     
-                except (tweepy.TweepError), e:
+                except (tweepy.TweepError), e:                   
                     print(e)
-                    self.persister.saveProcessedUser(new_user, error=True) 
+                  
+                    if type(e.message[0]) == dict and e.message[0]['code'] == 88:
+                        print "skipping user error limit"
+                        time.sleep(60)
+                    else:
+                        self.persister.saveProcessedUser(new_user, error=True) 
                     self.api_waiter()
                     continue
                     #TODO: treat specially lack of resources error

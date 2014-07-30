@@ -346,6 +346,7 @@ class TweetsPersister():
        Args:
            users: list of ids to be pushed
        """
+       print "comecando push, tamanho %d" %len(users)
        chunksize = 100
        for chunk in xrange(0, len(users), chunksize): #divide list in chunks
            #build string with numbers in brackets
@@ -354,7 +355,8 @@ class TweetsPersister():
            sql = "INSERT INTO users_queue (user_id, hits) VALUES %s ON DUPLICATE KEY UPDATE hits = hits + 1" %strusers
            data = ()
            self.query(sql, data)
-           self.commit()       
+           self.commit()
+       print "terminando push"
        
        return 
        

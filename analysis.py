@@ -15,44 +15,61 @@ json_fp = open('credentials.json')
 cred = json.load(json_fp)
 
 persister = TweetsPersister()
-#ROOTUSER = 14594813
-#root_tweets = persister.loadTweetsOfUser(ROOTUSER) #get all root tweets
 
-#load tweets already categorized by autoclassifier
-f = open("folha2600classes.data", "r") 
-root_tweets_extended = pickle.load(f)
-f.close()
+FOLHA = '14594813'
+ESTADAO = '9317502'
+UOLNOT = '14594698'
+G1 = '8802752'
+R7 = '65473559'
+
+ROOTUSERS = [int(FOLHA), int(ESTADAO), int(UOLNOT), int(G1), int(R7)]
+ROOTUSER = 14594813
+root_tweets = persister.loadTweetsOfUser(ROOTUSER) #get all root tweets
 
 
-class_dict = {'cotidiano':0, 'esporte':1, 'mundo':2, 
-              'poder':3, 'ilustrada':4, 'mercado':5}
+root_tweets = []
+for root in ROOTUSERS:
+    rt = persister.loadTweetsOfUser(root)
+    print len(rt)
+    root_tweets.extend(rt)
+    
+print len(root_tweets)
 
-def topiccleaner(tweet):
-    if tweet['class'] in class_dict.keys():
-        return True
-    else:
-        return False
+##load tweets already categorized by autoclassifier
+#f = open("folha2600classes.data", "r") 
+#root_tweets_extended = pickle.load(f)
+#f.close()
 
-#cleaning root tweets
-root_tweets = filter(topiccleaner, root_tweets_extended)
+
+#class_dict = {'cotidiano':0, 'esporte':1, 'mundo':2, 
+#              'poder':3, 'ilustrada':4, 'mercado':5}
+#
+#def topiccleaner(tweet):
+#    if tweet['class'] in class_dict.keys():
+#        return True
+#    else:
+#        return False
+#
+##cleaning root tweets
+#root_tweets = filter(topiccleaner, root_tweets_extended)
 
 
 
 
 tweets_collection = []
-classes = []
+#classes = []
 lens = []
-min_retweets = 20
+min_retweets = 40
 for root_tweet in root_tweets:
-    retweets = persister.loadRetweets(root_tweet['tweet']['tweet_id'])
+    retweets = persister.loadRetweets(root_tweet['tweet_id'])
     lens.append(len(retweets))
     #limiting just stories with more than min_retweets
     if retweets and len(retweets)>=min_retweets: 
         tweets_collection.append(retweets)
-        classes.append(root_tweet['class'])
+        #classes.append(root_tweet['class'])
 
 
-classes = np.array(classes)
+#classes = np.array(classes)
 tweets_collection = np.array(tweets_collection)
 users = np.array(list(set([item['user_id'] for sublist in tweets_collection for item in sublist])))
 #users.remove(ROOTUSER)
