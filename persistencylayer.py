@@ -18,6 +18,7 @@ class TweetsPersister():
                                 db = self.cred['db']['db'],
                                 user = self.cred['db']['user'],
                                 passwd = self.cred['db']['password'],
+                                port = self.cred['db']['port']
                                 charset = self.cred['db']['charset'])
 
    def query(self, sql, params):
@@ -229,6 +230,7 @@ class TweetsPersister():
       @param tweet_id
       @return Populated tweet dictionary, if tweet found. "None" otherwise.
       """
+      #TODO: index tweet_retweeted_status_id on db to speed up process?
       sql = "SELECT tweet_id, tweet_text, tweet_created_at, user_id FROM tweets WHERE tweet_retweeted_status_id = %s"
       data = (tweet_id,)
       c = self.query(sql, data)
@@ -406,7 +408,24 @@ class TweetsPersister():
        else:
            return False
        
-
+   def findRetweetOrigin(self, tweet_id):
+       """
+       For a given retweet, get the original tweet that originated it
+       """
+       
+       sql = "SELECT tweet_retweeted_status_id FROM tweets WHERE tweet_id = %s"
+       params = (tweet_id, )
+       c = self.query(sql, params)
+       row = c.fetchone()
+       
+       if row == 0:
+           return None
+       else:
+           #if found a source, get its text
+           return self.loadTweet(row)
+           
+           
+           
 
    def findUser(self, user_id):
       """

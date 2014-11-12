@@ -309,6 +309,8 @@ f = open("processed.data", "r")
 (TM_dict, G_sparse, G_pop) = pickle.load(f)
 f.close()
 
+TM_dict = np.load("TMdict0828.npy").item()
+
 ############################################
 
 
