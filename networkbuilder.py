@@ -144,8 +144,9 @@ class NetworkBuilder():
 
     
         while True:
-            if mode=='active': #get new users from database
+            if mode=='active': #get new users from database              
                 new_user = self.persister.loadUnprocessedUser(direction, origin=mode)
+                print "new_user", new_user
             elif mode=='queue': #get new users from queue
                 #try first to get unprocessed users from Users database
                 new_user = self.persister.loadUnprocessedUser(direction, origin=mode)
@@ -167,7 +168,7 @@ class NetworkBuilder():
                             continue
                     
                                  
-                            
+                    
                 
             
             if new_user:                        
@@ -238,9 +239,10 @@ class NetworkBuilder():
                     continue
                     #TODO: treat specially lack of resources error
         
-            else:
+            elif new_user == None:
                 print ">>>Network Builder desocupado!"
                 time.sleep(10)
+                break  
         
         
 def main(argv):

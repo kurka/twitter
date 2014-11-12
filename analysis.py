@@ -23,15 +23,16 @@ G1 = '8802752'
 R7 = '65473559'
 
 ROOTUSERS = [int(FOLHA), int(ESTADAO), int(UOLNOT), int(G1), int(R7)]
-ROOTUSER = 14594813
-root_tweets = persister.loadTweetsOfUser(ROOTUSER) #get all root tweets
+
+#ROOTUSER = 14594813
+#root_tweets = persister.loadTweetsOfUser(ROOTUSER) #get all root tweets
 
 
 root_tweets = []
 for root in ROOTUSERS:
     rt = persister.loadTweetsOfUser(root)
     print len(rt)
-    root_tweets.extend(rt)
+    root_tweets.extend(rt[:-100])
     
 print len(root_tweets)
 
@@ -59,7 +60,7 @@ print len(root_tweets)
 tweets_collection = []
 #classes = []
 lens = []
-min_retweets = 40
+min_retweets = 50
 for root_tweet in root_tweets:
     retweets = persister.loadRetweets(root_tweet['tweet_id'])
     lens.append(len(retweets))
@@ -74,6 +75,9 @@ tweets_collection = np.array(tweets_collection)
 users = np.array(list(set([item['user_id'] for sublist in tweets_collection for item in sublist])))
 #users.remove(ROOTUSER)
 
+f = open("tweetscol0825.data", "w")
+pickle.dump( tweets_collection, f)
+f.close()
 
 
 ##############################################################################
@@ -81,17 +85,23 @@ users = np.array(list(set([item['user_id'] for sublist in tweets_collection for 
 
 TM_dict = {}
 
-tweets_matrix = np.zeros((len(users), len(tweets_collection))) #empty matrix
+tweets_matrix = np.zeros((len(users), len(tweets_collection)), dtype='int8') #empty matrix
 
 for col_num, col in enumerate(tweets_collection):
     #get the positions of the users, in users list
     col_indexes = np.array([int(np.where(users == tweet['user_id'])[0]) for tweet in col]) 
     tweets_matrix[col_indexes, col_num] = 1
-    
+
+
+
+f = open("twetsmatrix0825.data", "w")
+pickle.dump( tweets_matrix, f)
+f.close()
+
 #remove bots from matrix
 #considera quem retweetou mais que 80% dos tweets um bot
 rsum = np.sum(tweets_matrix, axis=1)
-bots = np.where(rsum > 0.8*len(tweets_collection))[0] 
+bots = np.where(rsum > 0.6*len(tweets_collection))[0] 
 #TODO: melhorar definicao de bots. Talvez ver por timestamp
 
 
@@ -118,7 +128,7 @@ users = np.delete(users, zr)
 
 TM_dict['TM_sparse'] = {'tweets_matrix':tweets_matrix.copy(),
                                 'users':users.copy(),
-                                'classes':classes.copy(),
+                                #'classes':classes.copy(),
                                 'tweets_collection':tweets_collection.copy()
                                 }
 
@@ -138,7 +148,7 @@ classes = np.delete(classes, zl)
 
 TM_dict['TM_pop'] = {'tweets_matrix':tweets_matrix.copy(),
                                 'users':users.copy(),
-                                'classes':classes.copy(),
+                                #'classes':classes.copy(),
                                 'tweets_collection':tweets_collection.copy()
                                 }
 
@@ -151,7 +161,7 @@ def buildgraph(nodes_list):
     edges = []
     total = float(len(nodes_list))
     for count, n in enumerate(nodes_list):
-       print("%s/%s" %(count, total))
+       print("%s/%s %s" %(count, total, n))
        try:   
            f = open('net/'+str(n))
        except:
@@ -188,7 +198,7 @@ def removeIsolated(tm_dict, G):
         print "removendo", len(zl), "linhas"
     tm_dict['tweets_matrix'] = np.delete(tm_dict['tweets_matrix'], zl, axis=1)
     tm_dict['tweets_collection'] = np.delete(tm_dict['tweets_collection'], zl)
-    tm_dict['classes'] = np.delete(tm_dict['classes'], zl)
+    #tm_dict['classes'] = np.delete(tm_dict['classes'], zl)
     
     
     rsum = np.sum(tm_dict['tweets_matrix'], axis=1)
@@ -290,10 +300,12 @@ TM_dict['TM_pop_com']['tweets_matrix'], TM_dict['TM_pop_com']['partitions']  = c
 
 
 #salva tudo
+f = open("Graphs0828.data", "w")
+pickle.dump((G_sparse, G_pop), f)
+f.close()
 
-
-f = open("processed.data", "w")
-pickle.dump((TM_dict, G_sparse, G_pop), f)
+f = open("TMdict0828.data", "w")
+pickle.dump(TM_dict, f)
 f.close()
 
 
@@ -301,7 +313,7 @@ f.close()
 ###############################################################################
 #Machine Learning
 ###############################################################################
-###############################################################################
+##############################################################################
 
 
 import pickle
@@ -309,7 +321,11 @@ f = open("processed.data", "r")
 (TM_dict, G_sparse, G_pop) = pickle.load(f)
 f.close()
 
+<<<<<<< HEAD
 TM_dict = np.load("TMdict0828.npy").item()
+=======
+#TM_dict = np.load("TMdict0828.npy").item()
+>>>>>>> 65610a3de99d9e29a2e0c1b0c36ae06805d4307f
 
 ############################################
 
@@ -558,7 +574,7 @@ from kurkameans import kmeans
 ncluster = 20
 
 #for key in TM_dict.keys():  
-for key in ["TM_sparse"]:
+for key in ["TM_pop"]:
     print key
     X = TM_dict[key]['tweets_matrix'].T
   
@@ -895,7 +911,7 @@ for tm_dict in [TM_dict['TM_sparse_com']]:
         
         plt.subplot(1,2,num+1)
         plt.bar(np.arange(len(bars)), bars, align='center', color=['b','g','r','c','m','y'], label=class_dict.keys())
-        plt.xticks(np.arange(6), class_dict.keys(), rotation=90)
+        plt.xticks(np.arange(6), class_dict.keys(), rotation=90) #FIXME: ver se keys() segue a ordem de bars
         plt.ylabel("porcentagem")
         plt.title("Distribuicao Topicos Comunidade %s" %com)
         #plt.savefig("bar%s" %num)
